@@ -70,10 +70,9 @@ def scan_network(network):
 def print_results(devices):
     # Print the header
     print(
-        "\n",
-        "IP Address",
+        "\nIP Address",
         "MAC Address",
-        sep="\t\t\t",
+        sep="\t\t",
         end="\n" + "-" * 41 + "\n",
     )
     # Loop through the devices
