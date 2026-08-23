@@ -4,7 +4,7 @@
 # =============================================================================
 #
 #        FILE:  main.py
-#      AUTHOR:  Henry Mai <henryfromvietnam@gmail.com>
+#      AUTHOR:  Henry Mai <ducmai.network@gmail.com>
 #       USAGE:  sudo python3 main.py
 #               and identify the IP addresses and MAC addresses
 #               of all connected devices.
@@ -26,8 +26,10 @@ import scapy.all as scapy
 from rich.console import Console
 from rich.theme import Theme
 
-# Import ipaddress library
+# Stdlib
+import collections
 import ipaddress
+import socket
 
 
 # ---------------------------- Function Definitions ---------------------------
@@ -103,6 +105,116 @@ def scan_network(network):
     return devices
 
 
+def lookup_vendor(mac):
+    """Look up the manufacturer that registered a MAC address's OUI
+    (its first three octets), e.g. "b8:27:eb:11:22:33" ->
+    "Raspberry Pi Foundation".
+
+    Uses scapy's own bundled IEEE manufacturer database
+    (`scapy.conf.manufdb`) - no extra dependency and no network lookup.
+
+    Parameters
+    ----------
+    mac : str
+        A MAC address, e.g. "9c:5a:6b:1e:4f:0c".
+
+    Returns
+    -------
+    str or None
+        The manufacturer name, or None if the OUI isn't in the
+        database (very common for locally-administered/randomised
+        MACs, which is expected, not an error).
+    """
+    vendor = scapy.conf.manufdb._get_manuf(mac)
+    # _get_manuf() echoes the input back unchanged when there's no
+    # match, rather than raising or returning None itself.
+    if vendor.lower() == mac.lower():
+        return None
+    return vendor
+
+
+def lookup_hostname(ip, timeout=0.3):
+    """Attempt a reverse DNS lookup for an IP address.
+
+    Parameters
+    ----------
+    ip : str
+        The IP address to resolve.
+    timeout : float
+        Seconds to wait before giving up on this one lookup. Kept
+        short and per-lookup (rather than left unbounded) since these
+        run serially, one per discovered device, and most home/guest
+        networks have no PTR records for most hosts at all.
+
+    Returns
+    -------
+    str or None
+        The resolved hostname, or None if there's no PTR record, the
+        lookup times out, or DNS is unreachable - all routine outcomes
+        for a reverse lookup, not error conditions worth surfacing.
+    """
+    previous_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(timeout)
+    try:
+        hostname, _aliases, _addresses = socket.gethostbyaddr(ip)
+        return hostname
+    except (socket.herror, socket.gaierror, OSError):
+        return None
+    finally:
+        socket.setdefaulttimeout(previous_timeout)
+
+
+def enrich_devices(devices):
+    """Add "vendor" and "hostname" fields to each device dict in
+    place, using lookup_vendor() and lookup_hostname().
+
+    Parameters
+    ----------
+    devices : list[dict]
+        Devices as returned by scan_network().
+
+    Returns
+    -------
+    list[dict]
+        The same list, for convenient chaining - each dict has been
+        mutated in place, not replaced.
+    """
+    for device in devices:
+        device["vendor"] = lookup_vendor(device["mac"])
+        device["hostname"] = lookup_hostname(device["ip"])
+    return devices
+
+
+def find_ip_conflicts(devices):
+    """Find any IP address that answered from more than one distinct
+    MAC address in this scan.
+
+    Two different MACs both claiming the same IP is the classic
+    signature of either a misconfigured static IP, or an ARP-spoofing
+    /man-in-the-middle attempt in progress.
+
+    Parameters
+    ----------
+    devices : list[dict]
+        Devices as returned by scan_network().
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Maps each conflicting IP to the sorted list of MAC addresses
+        that answered for it. Empty if there are no conflicts.
+    """
+    macs_by_ip = collections.defaultdict(set)
+    for device in devices:
+        macs_by_ip[device["ip"]].add(device["mac"])
+
+    return {
+        ip: sorted(macs)
+        for ip, macs in macs_by_ip.items()
+        if len(macs) > 1
+    }
+
+
 # Define a function to print the results
 def print_results(devices):
     if not devices:
@@ -112,13 +224,30 @@ def print_results(devices):
     print(
         "\nIP Address",
         "MAC Address",
+        "Vendor",
+        "Hostname",
         sep="\t\t",
-        end="\n" + "-" * 41 + "\n",
+        end="\n" + "-" * 70 + "\n",
     )
     # Loop through the devices
     for device in devices:
-        # Print the IP and MAC addresses
-        print(device["ip"], device["mac"], sep="\t\t")
+        # Vendor/hostname are only present once enrich_devices() has
+        # run; fall back to "-" so this still works for a plain,
+        # un-enriched device list (e.g. in tests).
+        vendor = device.get("vendor") or "-"
+        hostname = device.get("hostname") or "-"
+        print(device["ip"], device["mac"], vendor, hostname, sep="\t\t")
+
+
+def print_conflicts(conflicts):
+    """Print a warning for each IP address that answered from more
+    than one MAC address - see find_ip_conflicts()."""
+    for ip, macs in conflicts.items():
+        print_error(
+            f"WARNING: {ip} responded from multiple MAC addresses "
+            f"({', '.join(macs)}) - possible IP conflict or ARP "
+            "spoofing."
+        )
 
 
 def print_error(message):
@@ -159,6 +288,11 @@ def main():
         )
         return
 
+    conflicts = find_ip_conflicts(devices)
+    if conflicts:
+        print_conflicts(conflicts)
+
+    enrich_devices(devices)
     print_results(devices)
 
 

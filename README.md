@@ -14,12 +14,17 @@
 
 # Network Scanner
 
-This project is a network scanner that can scan a local network and identify the
-IP addresses and MAC addresses of all connected devices. It uses the **scapy**
-library, which is a powerful tool for creating and manipulating network packets.
-Another important module is the **rich** module which provides colourised output
-to produce error message to the user. It also uses the **ipaddress** module,
-which provides functions for working with IP addresses and networks.
+This project is a network scanner that can scan a local network and identify
+the IP addresses and MAC addresses of all connected devices, enrich each one
+with its manufacturer and (when available) hostname, and flag any IP address
+that answers from more than one MAC address - the classic signature of an IP
+conflict or ARP spoofing.
+
+It uses the **scapy** library to send/receive the ARP requests (and its
+bundled IEEE manufacturer database for vendor lookups, so no extra
+dependency or network call is needed for that part). It uses the **rich**
+module for colourised error output, and the standard library's
+**ipaddress** and **socket** modules for address validation and reverse DNS.
 
 # Requirements
 
@@ -29,7 +34,8 @@ To run this project, you will to install necessary depencies by:
 $ pip install -r requirements.txt
 ```
 
-The ipaddress module is included in the standard library of Python 3.
+The ipaddress and socket modules are included in the standard library of
+Python 3.
 
 # Usage
 
@@ -43,9 +49,12 @@ $ sudo python main.py
 The script will ask you to enter the network address that you want to scan, such
 as 192.168.1.0/24. The network address must be a valid IP address or network,
 otherwise the script will raise an error. The script will then send ARP requests
-to all devices on the network and capture the ARP responses. The script will
-print the IP and MAC addresses of all devices that responded to the ARP
-requests.
+to all devices on the network and capture the ARP responses. For each device
+that responds, the script looks up its manufacturer (from the MAC address's
+OUI) and attempts a reverse DNS lookup for its hostname, then prints the IP
+address, MAC address, vendor, and hostname of every device that responded to
+the ARP requests. If the same IP address answers from two different MAC
+addresses, a warning is printed before the results.
 
 # Example
 
@@ -54,12 +63,16 @@ Here is an example of the output of the script:
 ```txt
 Enter the network address (e.g., 192.168.1.0 or 192.168.1.0/24): 192.168.1.0/24
 
-IP Address              MAC Address
------------------------------------------
-192.168.1.1             9c:5a:6b:1e:4f:0c
-192.168.1.2             4a:7c:9f:3b:2d:8e
-192.168.1.254           7d:3e:8a:5c:1b:9d
+IP Address              MAC Address            Vendor                     Hostname
+------------------------------------------------------------------------------------
+192.168.1.1              9c:5a:6b:1e:4f:0c      Google, Inc.               router.local
+192.168.1.2              4a:7c:9f:3b:2d:8e      -                          -
+192.168.1.254             b8:27:eb:5c:1b:9d      Raspberry Pi Foundation    pi-hole.local
 ```
+
+A vendor or hostname of `-` just means that lookup came back empty (an
+unregistered/locally-administered MAC, or no PTR record) - both routine on
+most networks, not an error.
 
 # Testing
 
@@ -106,4 +119,34 @@ A round of review found and fixed several issues:
   error case in the script getting a friendly message.
 - **An empty scan result printed just a bare header row**, with
   nothing underneath and no indication that zero devices were found.
+
+## New since the initial review: enrichment and anomaly detection
+
+Three low-effort, high-value features from `ROADMAP.md`'s capability
+analysis have been implemented:
+
+- **MAC vendor lookup** (`lookup_vendor()`) - identifies the
+  manufacturer of each discovered device from its MAC address's OUI,
+  using scapy's own bundled IEEE database. No new dependency, no
+  network call.
+- **Hostname resolution** (`lookup_hostname()`) - a reverse DNS lookup
+  per device, using the standard library only. Kept deliberately
+  simple: lookups run serially with a short (0.3s default) per-lookup
+  timeout, rather than in parallel. On a network with many silent
+  hosts this adds a small amount of time to each scan; that tradeoff
+  was chosen over adding concurrency (threads/asyncio) to keep the
+  implementation small - worth revisiting if scan time on larger
+  networks becomes a real complaint.
+- **IP conflict / ARP anomaly detection** (`find_ip_conflicts()`) - if
+  the same IP address answers from two different MAC addresses in one
+  scan, a warning is printed before the results table. This is the
+  classic signature of either a misconfigured static IP or an
+  ARP-spoofing attempt in progress.
+
+Deliberately **not** implemented here (see `ROADMAP.md` for the full
+reasoning): SNMP polling, persistence/baseline diffing ("what changed
+since last scan"), a non-interactive CLI, and anything AI-adjacent -
+all flagged as either heavier dependencies, bigger architectural
+changes, or open-ended scope that didn't fit a small, single-file
+project.
 
