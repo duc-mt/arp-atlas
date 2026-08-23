@@ -6,6 +6,9 @@
 - [Requirements](#requirements)
 - [Usage](#usage)
 - [Example](#example)
+- [Testing](#testing)
+- [Development](#development)
+- [Known Limitations](#known-limitations)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -57,3 +60,50 @@ IP Address              MAC Address
 192.168.1.2             4a:7c:9f:3b:2d:8e
 192.168.1.254           7d:3e:8a:5c:1b:9d
 ```
+
+# Testing
+
+Install the dev dependencies and run the test suite:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Sending real ARP packets needs root privileges and a real network, so
+the tests never do that: `scapy.srp()` is mocked out everywhere, and
+only the ordinary Python logic around it (address validation, result
+parsing, output formatting, error handling) is under test.
+
+# Development
+
+CI runs on every pull request and push via GitHub Actions
+(`.github/workflows/ci.yml`): linting (`ruff`), tests across Python
+3.10-3.12, and `bandit` + `pip-audit` security scans. A weekly CodeQL
+scan and Dependabot are also configured.
+
+# Known Limitations
+
+A round of review found and fixed several issues:
+
+- **The old CI workflow never actually ran.** It lived at
+  `.github/main.yml` - GitHub Actions only discovers workflows under
+  `.github/workflows/`, so a file directly under `.github/` is
+  invisible to it. Every push and PR silently had no CI at all.
+- **A pasted address with surrounding whitespace was rejected.**
+  `ipaddress.ip_network()` doesn't trim its input, so a trailing
+  newline or leading space - a common paste artifact - made a
+  perfectly valid address fail validation with a confusing "not a
+  valid network address" error.
+- **A host address with a prefix was rejected outright.** Typing
+  `192.168.1.5/24` (a natural way to say "scan the subnet this host is
+  on") failed with "has host bits set", even though the intent is
+  unambiguous and scapy's own address expansion already normalises it
+  down to the containing network correctly.
+- **Running without root crashed with a raw traceback.** Scanning
+  needs raw-socket access; without it, `scapy.srp()` raises
+  `PermissionError`, which wasn't handled anywhere despite every other
+  error case in the script getting a friendly message.
+- **An empty scan result printed just a bare header row**, with
+  nothing underneath and no indication that zero devices were found.
+
