@@ -5,6 +5,8 @@
 - [Network Scanner](#network-scanner)
 - [Requirements](#requirements)
 - [Usage](#usage)
+  - [Command-line options](#command-line-options)
+  - [Scan history and diffing](#scan-history-and-diffing)
 - [Example](#example)
 - [Testing](#testing)
 - [Development](#development)
@@ -40,21 +42,73 @@ Python 3.
 # Usage
 
 To use this project, you can run the script main.py from the command
-line as root:
+line as root, either interactively:
 
 ```bash
 $ sudo python main.py
 ```
 
-The script will ask you to enter the network address that you want to scan, such
-as 192.168.1.0/24. The network address must be a valid IP address or network,
-otherwise the script will raise an error. The script will then send ARP requests
-to all devices on the network and capture the ARP responses. For each device
-that responds, the script looks up its manufacturer (from the MAC address's
-OUI) and attempts a reverse DNS lookup for its hostname, then prints the IP
-address, MAC address, vendor, and hostname of every device that responded to
-the ARP requests. If the same IP address answers from two different MAC
-addresses, a warning is printed before the results.
+...or non-interactively, for scripting and automation:
+
+```bash
+$ sudo python main.py --network 192.168.1.0/24
+```
+
+The network address must be a valid IP address or network, otherwise the
+script will raise an error. The script will then send ARP requests to all
+devices on the network and capture the ARP responses. For each device that
+responds, the script looks up its manufacturer (from the MAC address's
+OUI) and attempts a reverse DNS lookup for its hostname, then prints the
+IP address, MAC address, vendor, and hostname of every device that
+responded to the ARP requests. If the same IP address answers from two
+different MAC addresses, a warning is printed before the results.
+
+## Command-line options
+
+Run `python main.py --help` for the full list. The main ones:
+
+```bash
+# Give a larger network more time to reply (default: 1 second)
+$ sudo python main.py --network 10.0.0.0/16 --timeout 5
+
+# Also probe a handful of common ports and guess each device's role -
+# adds noticeable time per device, so this is opt-in
+$ sudo python main.py --network 192.168.1.0/24 --scan-ports
+
+# Export results (format inferred from the extension)
+$ sudo python main.py --network 192.168.1.0/24 --output scan.csv
+$ sudo python main.py --network 192.168.1.0/24 --output scan.json
+
+# Use a custom history file, or skip history/diffing entirely
+$ sudo python main.py --network 192.168.1.0/24 --history-file /var/lib/nethunter/history.json
+$ sudo python main.py --network 192.168.1.0/24 --no-history
+```
+
+Running without `--network` starts the interactive prompt (the original
+behaviour), which also asks whether to scan ports and offers to export
+results at the end.
+
+## Scan history and diffing
+
+Every scan is automatically compared against the previous scan of the
+*same* network (matched by MAC address, not IP - IP can change between
+scans under DHCP, so a device isn't reported as "gone" just because DHCP
+handed it a new address) and persisted for next time, in `scan_history.json`
+by default:
+
+```txt
+New devices since last scan:
+  + 192.168.1.42	de:ad:be:ef:00:01
+
+Devices missing since last scan:
+  - 192.168.1.7	11:22:33:44:55:66
+
+Devices with a changed IP since last scan:
+  ~ aa:bb:cc:dd:ee:ff	192.168.1.10 -> 192.168.1.15
+```
+
+Nothing is printed on the very first scan of a network (there's nothing
+to compare against yet), or on any scan where nothing changed.
 
 # Example
 
@@ -144,9 +198,42 @@ analysis have been implemented:
   ARP-spoofing attempt in progress.
 
 Deliberately **not** implemented here (see `ROADMAP.md` for the full
-reasoning): SNMP polling, persistence/baseline diffing ("what changed
-since last scan"), a non-interactive CLI, and anything AI-adjacent -
-all flagged as either heavier dependencies, bigger architectural
-changes, or open-ended scope that didn't fit a small, single-file
-project.
+reasoning): SNMP polling and anything AI-adjacent - flagged as either
+heavier dependencies or open-ended scope that didn't fit a small,
+single-file project.
+
+## New since then: export, configurable timeout, CLI mode, history/diff, port scan
+
+Five more features, closing most of the remaining gap flagged in the
+original architecture review and roadmap:
+
+1. **CSV/JSON export** (`export_devices()`) - `--output scan.csv` or
+   `--output scan.json` (or the interactive prompt's export step). Format
+   is inferred from the extension, or set explicitly with `--format`. No
+   new dependency - stdlib `csv`/`json`.
+2. **Configurable scan timeout** (`--timeout`) - the timeout used to be
+   hardcoded to 1 second regardless of network size, which the original
+   review flagged directly: a `/16` got the same window as a `/24` and
+   would systematically under-report, since `scapy.srp()`'s timeout is a
+   single wait covering the whole sweep, not a per-host retry budget.
+3. **A non-interactive CLI mode** (`--network`, plus every flag above) -
+   see "Command-line options". `main.py` with no arguments still runs the
+   original interactive prompt.
+4. **Scan history and diffing** (`load_history()`/`save_scan()`/
+   `diff_devices()`) - the biggest addition, and the one the roadmap
+   called out as the dependency almost everything else builds on. Every
+   scan is compared against the last scan of the same network and
+   persisted for next time - see "Scan history and diffing" above.
+   Devices are matched by MAC address specifically, not IP, since IP can
+   change between scans under DHCP.
+5. **An opt-in port scan and rough device-role guess**
+   (`scan_device_ports()`/`classify_device()`) - `--scan-ports` probes a
+   small, fixed set of well-known ports (22, 80, 443, 3389, 9100) on each
+   device and labels it printer/router-switch/windows-host/server/
+   web-enabled-device/unknown from the result plus its vendor name. This
+   is a best-effort heuristic, not authoritative - it's meant to make a
+   device list more skimmable, not to replace real fingerprinting. Opt-in
+   specifically because of the added latency: at up to 5 ports per device
+   and a real per-port connection timeout, this meaningfully slows down a
+   scan of many devices, unlike everything else in this list.
 

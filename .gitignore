@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# Generated at runtime by scan history/diffing - not something to
+# commit, since it's specific to whoever ran the scan and when.
+scan_history.json

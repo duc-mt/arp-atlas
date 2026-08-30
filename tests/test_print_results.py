@@ -43,6 +43,44 @@ class TestPrintResults:
         out = capsys.readouterr().out
         assert "192.168.1.1" in out
 
+    def test_role_and_ports_columns_omitted_without_a_port_scan(self, capsys):
+        devices = [{
+            "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
+            "vendor": None, "hostname": None,
+        }]
+        main.print_results(devices)
+
+        out = capsys.readouterr().out
+        assert "Role" not in out
+        assert "Open Ports" not in out
+
+    def test_role_and_ports_columns_shown_after_a_port_scan(self, capsys):
+        devices = [{
+            "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
+            "vendor": None, "hostname": None,
+            "open_ports": [22, 80], "role": "server",
+        }]
+        main.print_results(devices)
+
+        out = capsys.readouterr().out
+        assert "Role" in out
+        assert "Open Ports" in out
+        assert "22,80" in out
+        assert "server" in out
+
+    def test_no_open_ports_shows_a_placeholder_not_an_empty_cell(
+        self, capsys
+    ):
+        devices = [{
+            "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
+            "vendor": None, "hostname": None,
+            "open_ports": [], "role": "unknown",
+        }]
+        main.print_results(devices)
+
+        out = capsys.readouterr().out
+        assert "192.168.1.1\t\taa:aa:aa:aa:aa:aa\t\t-\t\t-\t\t-\t\tunknown" in out
+
     def test_empty_list_prints_a_friendly_message_not_a_bare_header(
         self, capsys
     ):
