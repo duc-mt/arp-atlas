@@ -6,12 +6,10 @@
 #        FILE:  main.py
 #      AUTHOR:  Mai Tan Duc <ducmai.network@gmail.com>
 #       USAGE:  sudo python3 main.py
-#               and identify the IP addresses and MAC addresses
-#               of all connected devices.
+#     CREATED:  2023-11-22
 # DESCRIPTION:  A network scanner that can scan a local network
 #               and identify the IP addresses and MAC addresses
 #               of all connected devices.
-#     CREATED:  2023-11-22
 #
 # =============================================================================
 
