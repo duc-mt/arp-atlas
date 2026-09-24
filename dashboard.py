@@ -11,8 +11,65 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Network Hunter Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              bg: "var(--color-bg)",
+              panel: "var(--color-panel)",
+              "panel-alt": "var(--color-panel-alt)",
+              border: "var(--color-border)",
+              text: "var(--color-text)",
+              muted: "var(--color-muted)",
+              accent: "var(--color-accent)",
+              "accent-soft": "var(--color-accent-soft)",
+              healthy: "var(--color-healthy)",
+              degraded: "var(--color-degraded)",
+              offline: "var(--color-offline)",
+              unknown: "var(--color-unknown)",
+            },
+            fontFamily: {
+              sans: ["Inter", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+              mono: ["'JetBrains Mono'", "'SFMono-Regular'", "Consolas", "monospace"],
+            },
+            borderRadius: {
+              card: "10px",
+              control: "6px",
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --color-bg: #0a0e1a;
+        --color-panel: #121826;
+        --color-panel-alt: #161d2e;
+        --color-border: #232b3d;
+        --color-text: #e6eaf2;
+        --color-muted: #8b93a7;
+        --color-accent: #34d8c6;
+        --color-accent-soft: rgba(52, 216, 198, 0.12);
+        --color-healthy: #3dd68c;
+        --color-degraded: #f5b94d;
+        --color-offline: #f2545b;
+        --color-unknown: #6b7280;
+      }
+      body {
+        background-color: var(--color-bg);
+        color: var(--color-text);
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+      }
+      * { scrollbar-width: thin; scrollbar-color: var(--color-border) transparent; }
+      *::-webkit-scrollbar { width: 8px; height: 8px; }
+      *::-webkit-scrollbar-thumb { background-color: var(--color-border); border-radius: 8px; }
+    </style>
     <script>
         
         async function clearHistory() {
@@ -274,59 +331,63 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 if (totalHosts <= 0) totalHosts = 1;
                 let pct = (stats.responded / totalHosts) * 100;
 
-                let html = `<div class="bg-white rounded-lg shadow-md mb-6 p-6">
+                const isHealthy = pct >= 50;
+                const isWarning = pct >= 10 && pct < 50;
+                const barColor = isHealthy ? 'bg-healthy' : (isWarning ? 'bg-degraded' : 'bg-offline');
+                
+                let html = `<div class="bg-panel rounded-card border border-border mb-6 p-6">
                     <div class="flex justify-between items-start mb-2">
-                        <h2 class="text-2xl font-bold text-slate-800">Network: ${network}</h2>
+                        <h2 class="text-xl font-medium text-text">Network: ${network}</h2>
                         <div class="flex space-x-2">
-                            <button onclick="exportScanCsv('${network}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-1.5 rounded shadow-sm text-sm font-semibold transition">Export Data (CSV)</button>
-                            <button onclick="showAvailableAddresses('${network}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-4 py-1.5 rounded shadow-sm text-sm font-semibold transition">View Available Addresses</button>
+                            <button onclick="exportScanCsv('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Export CSV</button>
+                            <button onclick="showAvailableAddresses('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">View Available Addresses</button>
                         </div>
                     </div>
-                    <p class="text-sm text-slate-500 mb-4">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
+                    <p class="text-xs text-muted mb-6">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
                     
-                    <div class="flex flex-col md:flex-row gap-6 mb-6 items-center">
+                    <div class="flex flex-col md:flex-row gap-6 mb-8 items-center">
                         <div class="flex-1 w-full">
-                            <div class="flex justify-between text-sm mb-1">
-                                <span class="font-medium text-slate-700">${stats.responded} of ${totalHosts} addresses found</span>
-                                <span class="font-medium text-slate-700">${pct.toFixed(1)}%</span>
+                            <div class="flex justify-between text-xs mb-1.5">
+                                <span class="font-medium text-text">${stats.responded} of ${totalHosts} addresses found</span>
+                                <span class="font-medium text-text">${pct.toFixed(1)}%</span>
                             </div>
-                            <div class="w-full bg-slate-200 rounded-full h-2.5">
-                                <div class="${pct >= 50 ? 'bg-emerald-500' : pct >= 10 ? 'bg-amber-500' : 'bg-red-500'} h-2.5 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                            <div class="w-full bg-panel-alt rounded-full h-1.5">
+                                <div class="${barColor} h-1.5 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
                             </div>
                         </div>
-                        <div class="w-48 h-48 relative">
+                        <div class="w-40 h-40 relative">
                             <canvas id="${chartId}"></canvas>
                         </div>
                     </div>
                     
                     <div class="overflow-x-auto">
-                        <table class="min-w-full text-left text-sm whitespace-nowrap">
-                            <thead class="uppercase tracking-wider border-b-2 border-slate-200 bg-slate-50">
-                                <tr>
-                                    <th scope="col" class="px-6 py-4">IP Address</th>
-                                    <th scope="col" class="px-6 py-4">MAC Address</th>
-                                    <th scope="col" class="px-6 py-4">Vendor</th>
-                                    <th scope="col" class="px-6 py-4">Hostname</th>
-                                    <th scope="col" class="px-6 py-4">Ports</th>
-                                    <th scope="col" class="px-6 py-4">Role</th>
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-xs text-muted uppercase tracking-wide border-b border-border">
+                                    <th class="py-2.5 pr-3 font-medium">IP Address</th>
+                                    <th class="py-2.5 pr-3 font-medium">MAC Address</th>
+                                    <th class="py-2.5 pr-3 font-medium">Vendor</th>
+                                    <th class="py-2.5 pr-3 font-medium">Hostname</th>
+                                    <th class="py-2.5 pr-3 font-medium">Ports</th>
+                                    <th class="py-2.5 pr-3 font-medium">Role</th>
                                 </tr>
                             </thead>
                             <tbody>`;
                 
                 info.devices.forEach(device => {
-                    const isRandom = device.is_randomized ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Random</span>' : '';
+                    const isRandom = device.is_randomized ? '<span class="ml-2 inline-flex items-center rounded-full bg-panel-alt text-muted text-[11px] px-2 py-0.5 border border-border">Random</span>' : '';
                     const vendor = device.vendor || '-';
                     const hostname = device.hostname || '-';
                     const ports = (device.open_ports || []).join(', ') || '-';
                     const role = device.role || '-';
                     
-                    html += `<tr class="border-b border-slate-100 hover:bg-slate-50">
-                        <td class="px-6 py-4 font-mono">${device.ip}</td>
-                        <td class="px-6 py-4 font-mono">${device.mac}${isRandom}</td>
-                        <td class="px-6 py-4">${vendor}</td>
-                        <td class="px-6 py-4">${hostname}</td>
-                        <td class="px-6 py-4 font-mono">${ports}</td>
-                        <td class="px-6 py-4 capitalize">${role}</td>
+                    html += `<tr class="border-b border-border last:border-0 hover:bg-panel-alt transition-colors">
+                        <td class="py-2.5 pr-3 font-mono text-xs text-text">${device.ip}</td>
+                        <td class="py-2.5 pr-3 font-mono text-xs text-text">${device.mac} ${isRandom}</td>
+                        <td class="py-2.5 pr-3 text-xs text-muted">${vendor}</td>
+                        <td class="py-2.5 pr-3 text-xs text-muted">${hostname}</td>
+                        <td class="py-2.5 pr-3 font-mono text-xs text-muted">${ports}</td>
+                        <td class="py-2.5 pr-3 text-xs text-muted capitalize">${role}</td>
                     </tr>`;
                 });
                 
@@ -348,7 +409,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         labels: ['Responded', 'Other Interface', 'No Response'],
                         datasets: [{
                             data: [c.stats.responded, c.stats.wrong_iface, c.stats.no_response],
-                            backgroundColor: ['#10b981', '#f59e0b', '#e2e8f0']
+                            backgroundColor: ['#3dd68c', '#f5b94d', '#232b3d'], borderColor: '#121826', borderWidth: 2
                         }]
                     },
                     options: {
@@ -393,20 +454,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </main>
 
     <!-- Available Addresses Modal -->
-    <div id="available-modal" class="fixed inset-0 bg-slate-900 bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
-            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                <h3 id="available-title" class="text-lg font-bold text-slate-800">Available Addresses</h3>
-                <button onclick="closeAvailableModal()" class="text-slate-400 hover:text-slate-600">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+    <div id="available-modal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-panel rounded-card border border-border w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl">
+            <div class="px-6 py-4 border-b border-border flex justify-between items-center bg-panel rounded-t-card">
+                <h3 id="available-title" class="text-sm font-medium text-text">Available Addresses</h3>
+                <button onclick="closeAvailableModal()" class="text-muted hover:text-text transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="p-6 overflow-y-auto flex-1 bg-slate-50">
-                <ul id="available-list" class="space-y-1 font-mono text-sm text-slate-700"></ul>
+            <div class="p-6 overflow-y-auto flex-1 bg-bg">
+                <ul id="available-list" class="space-y-1 font-mono text-xs text-muted"></ul>
             </div>
-            <div class="px-6 py-4 border-t border-slate-200 bg-slate-100 flex justify-end space-x-3 rounded-b-lg">
-                <button onclick="copyAvailable()" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded shadow-sm text-sm font-semibold transition">Copy to Clipboard</button>
-                <button onclick="exportAvailableCsv()" class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded shadow-sm text-sm font-semibold transition">Export to CSV</button>
+            <div class="px-6 py-4 border-t border-border bg-panel flex justify-end space-x-3 rounded-b-card">
+                <button onclick="copyAvailable()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Copy</button>
+                <button onclick="exportAvailableCsv()" class="text-xs px-4 py-1.5 rounded-control bg-accent text-bg hover:opacity-90 font-medium transition-opacity">Export CSV</button>
             </div>
         </div>
     </div>
