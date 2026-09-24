@@ -7,37 +7,54 @@ import csv
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
-    QProgressBar, QHeaderView, QCheckBox, QMessageBox, QDialog, QListWidget, QFileDialog
+    QProgressBar, QHeaderView, QCheckBox, QMessageBox, QDialog, QListWidget, QFileDialog, QComboBox, QFormLayout
 )
 
+from PySide6.QtCharts import QChart, QChartView, QPieSeries
+from PySide6.QtGui import QPainter
+import scapy.all as scapy
 import main
 
 class ScanWorker(QThread):
     progress = Signal(int, int, str)  # current, total, status text
     device_found = Signal(dict)       # emitted initially
-    discovery_summary = Signal(int, int) # found, total
+    discovery_summary = Signal(int, int, int) # responded, wrong_iface, no_response
     device_updated = Signal(dict)     # emitted after port scan
     finished_scan = Signal(list)
     error = Signal(str)
 
-    def __init__(self, network: str, scan_ports: bool):
+    def __init__(self, start_ip: str, end_ip: str, iface: str, scan_ports: bool):
         super().__init__()
-        self.network = network
+        self.start_ip = start_ip
+        self.end_ip = end_ip
+        self.iface = iface
         self.scan_ports = scan_ports
 
     def run(self):
         try:
-            self.progress.emit(0, 0, "Validating network...")
-            valid_network = main.validate_network(self.network)
-            
-            self.progress.emit(0, 0, f"Running ARP discovery on {valid_network}...")
-            devices = main.scan_network(valid_network)
-            
             import ipaddress
-            net_obj = ipaddress.ip_network(valid_network, strict=False)
-            total_ips = net_obj.num_addresses
-            total_hosts = total_ips - 2 if net_obj.version == 4 and net_obj.prefixlen <= 30 else total_ips
-            self.discovery_summary.emit(len(devices), total_hosts)
+            start_obj = ipaddress.IPv4Address(self.start_ip)
+            end_obj = ipaddress.IPv4Address(self.end_ip)
+            if start_obj > end_obj:
+                start_obj, end_obj = end_obj, start_obj
+            
+            target_ips = [str(ipaddress.ip_address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)]
+            
+            self.progress.emit(0, 0, f"Running ARP discovery on {self.iface} for {len(target_ips)} hosts...")
+            devices = main.scan_network(target_ips, iface=self.iface)
+            
+            wrong_iface_count = 0
+            for ip in target_ips:
+                route = scapy.conf.route.route(ip)[0]
+                if hasattr(route, "name"): route = route.name
+                if route != self.iface:
+                    wrong_iface_count += 1
+                    
+            responded = len(devices)
+            no_response = len(target_ips) - responded - wrong_iface_count
+            if no_response < 0: no_response = 0
+            
+            self.discovery_summary.emit(responded, wrong_iface_count, no_response)
             
             if not devices:
                 self.finished_scan.emit([])
@@ -60,7 +77,7 @@ class ScanWorker(QThread):
                 main.scan_devices_ports(devices, progress_callback=port_progress)
             
             self.progress.emit(len(devices), len(devices), "Saving history...")
-            main.save_scan(main.HISTORY_FILE, valid_network, devices)
+            main.save_scan(main.HISTORY_FILE, f"{self.start_ip}-{self.end_ip}", devices)
             self.finished_scan.emit(devices)
             
         except Exception as e:
@@ -73,8 +90,17 @@ class AvailableAddressesDialog(QDialog):
         super().__init__(parent)
         
         try:
-            net = ipaddress.ip_network(network_str, strict=False)
-            all_hosts = set(str(ip) for ip in net.hosts())
+            if "-" in network_str:
+                start_ip, end_ip = network_str.split("-")
+                start_obj = ipaddress.IPv4Address(start_ip)
+                end_obj = ipaddress.IPv4Address(end_ip)
+                if start_obj > end_obj:
+                    start_obj, end_obj = end_obj, start_obj
+                all_hosts = {str(ipaddress.ip_address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)}
+            else:
+                net = ipaddress.ip_network(network_str, strict=False)
+                all_hosts = set(str(ip) for ip in net.hosts())
+                
             self.available_ips = sorted(list(all_hosts - found_ips), key=lambda ip: ipaddress.ip_address(ip))
         except ValueError:
             self.available_ips = []
@@ -135,11 +161,23 @@ class NetworkHunterGUI(QMainWindow):
 
         # Top Bar
         top_layout = QHBoxLayout()
-        top_layout.addWidget(QLabel("Network:"))
         
-        self.network_input = QLineEdit()
-        self.network_input.setPlaceholderText("e.g. 192.168.1.0/24")
-        top_layout.addWidget(self.network_input)
+        top_layout.addWidget(QLabel("Interface:"))
+        self.iface_combo = QComboBox()
+        for iface in scapy.get_working_ifaces():
+            if iface.ip:
+                self.iface_combo.addItem(f"{iface.name} ({iface.ip})", iface.name)
+        top_layout.addWidget(self.iface_combo)
+        
+        top_layout.addWidget(QLabel("Start IP:"))
+        self.start_ip_input = QLineEdit()
+        self.start_ip_input.setPlaceholderText("192.168.1.1")
+        top_layout.addWidget(self.start_ip_input)
+        
+        top_layout.addWidget(QLabel("End IP:"))
+        self.end_ip_input = QLineEdit()
+        self.end_ip_input.setPlaceholderText("192.168.1.254")
+        top_layout.addWidget(self.end_ip_input)
         
         self.ports_checkbox = QCheckBox("Scan Ports")
         top_layout.addWidget(self.ports_checkbox)
@@ -158,6 +196,16 @@ class NetworkHunterGUI(QMainWindow):
         self.summary_bar.setFixedHeight(12)
         self.summary_layout.addWidget(self.summary_label)
         self.summary_layout.addWidget(self.summary_bar, stretch=1)
+        
+        self.chart_view = QChartView()
+        self.chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.chart_view.setFixedHeight(120)
+        self.chart = QChart()
+        self.chart.legend().setVisible(True)
+        self.chart.legend().setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.chart.layout().setContentsMargins(0, 0, 0, 0)
+        self.chart_view.setChart(self.chart)
+        self.summary_layout.addWidget(self.chart_view)
         
         self.view_available_btn = QPushButton("View Available Addresses")
         self.view_available_btn.setEnabled(False)
@@ -184,9 +232,12 @@ class NetworkHunterGUI(QMainWindow):
         layout.addLayout(status_layout)
 
     def start_scan(self):
-        network = self.network_input.text().strip()
-        if not network:
-            QMessageBox.warning(self, "Input Error", "Please enter a network address.")
+        start_ip = self.start_ip_input.text().strip()
+        end_ip = self.end_ip_input.text().strip()
+        iface = self.iface_combo.currentData()
+        
+        if not start_ip or not end_ip:
+            QMessageBox.warning(self, "Input Error", "Please enter Start and End IP addresses.")
             return
 
         self.scan_btn.setEnabled(False)
@@ -194,7 +245,10 @@ class NetworkHunterGUI(QMainWindow):
         self.table.setRowCount(0)
         self.row_map.clear()
         
-        self.worker = ScanWorker(network, self.ports_checkbox.isChecked())
+        if hasattr(self, 'chart'):
+            self.chart.removeAllSeries()
+            
+        self.worker = ScanWorker(start_ip, end_ip, iface, self.ports_checkbox.isChecked())
         self.summary_label.setText("Scanning...")
         self.summary_bar.setValue(0)
         self.summary_bar.setStyleSheet("")
@@ -211,14 +265,15 @@ class NetworkHunterGUI(QMainWindow):
     SUMMARY_THRESHOLD_GOOD = 50.0
     SUMMARY_THRESHOLD_WARN = 10.0
 
-    @Slot(int, int)
-    def update_discovery_summary(self, found: int, total: int):
+    @Slot(int, int, int)
+    def update_discovery_summary(self, responded: int, wrong_iface: int, no_response: int):
+        total = responded + wrong_iface + no_response
         if total <= 0:
             total = 1
-        pct = (found / total) * 100
-        self.summary_label.setText(f"{found} of {total} addresses found ({pct:.1f}%)")
+        pct = (responded / total) * 100
+        self.summary_label.setText(f"{responded} of {total} addresses found ({pct:.1f}%)")
         self.summary_bar.setMaximum(total)
-        self.summary_bar.setValue(found)
+        self.summary_bar.setValue(responded)
         
         if pct >= self.SUMMARY_THRESHOLD_GOOD:
             color = "#10b981"  # Emerald
@@ -228,6 +283,15 @@ class NetworkHunterGUI(QMainWindow):
             color = "#ef4444"  # Red
             
         self.summary_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; border-radius: 2px; }} QProgressBar {{ background-color: #e2e8f0; border-radius: 2px; }}")
+        
+        series = QPieSeries()
+        s1 = series.append("Responded", responded)
+        s1.setColor(Qt.GlobalColor.green)
+        s2 = series.append("Other Interface", wrong_iface)
+        s2.setColor(Qt.GlobalColor.yellow)
+        s3 = series.append("No Response", no_response)
+        s3.setColor(Qt.GlobalColor.gray)
+        self.chart.addSeries(series)
 
     @Slot(int, int, str)
     def update_progress(self, current: int, total: int, status: str):
@@ -270,7 +334,7 @@ class NetworkHunterGUI(QMainWindow):
     def scan_finished(self, devices: list):
         self.scan_btn.setEnabled(True)
         self.view_available_btn.setEnabled(True)
-        self.last_scanned_network = self.network_input.text().strip()
+        self.last_scanned_network = f"{self.start_ip_input.text().strip()}-{self.end_ip_input.text().strip()}"
         self.last_found_ips = {d.get("ip") for d in devices}
         self.progress_bar.setMaximum(1)
         self.progress_bar.setValue(1)
