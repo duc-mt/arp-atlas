@@ -67,6 +67,76 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         }
 
+        window.currentData = null;
+        window.currentAvailableIps = [];
+        
+        function getAvailableIps(network, foundIps) {
+            const parts = network.split('/');
+            if (parts.length !== 2) return [];
+            const ip = parts[0];
+            const prefix = parseInt(parts[1], 10);
+            if (prefix > 30 || prefix < 8) return [];
+            
+            const ipParts = ip.split('.').map(Number);
+            let ipLong = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
+            
+            const mask = ~((1 << (32 - prefix)) - 1) >>> 0;
+            const networkLong = (ipLong & mask) >>> 0;
+            const broadcastLong = (networkLong | ~mask) >>> 0;
+            
+            const available = [];
+            const foundSet = new Set(foundIps);
+            
+            for (let i = networkLong + 1; i < broadcastLong; i++) {
+                const octet1 = (i >>> 24) & 255;
+                const octet2 = (i >>> 16) & 255;
+                const octet3 = (i >>> 8) & 255;
+                const octet4 = i & 255;
+                const ipStr = `${octet1}.${octet2}.${octet3}.${octet4}`;
+                if (!foundSet.has(ipStr)) {
+                    available.push(ipStr);
+                }
+            }
+            return available;
+        }
+
+        function showAvailableAddresses(network) {
+            if (!window.currentData || !window.currentData[network]) return;
+            const info = window.currentData[network];
+            const foundIps = info.devices.map(d => d.ip);
+            
+            const available = getAvailableIps(network, foundIps);
+            window.currentAvailableIps = available;
+            
+            document.getElementById('available-title').innerText = `Available Addresses (${available.length})`;
+            
+            const listEl = document.getElementById('available-list');
+            listEl.innerHTML = available.map(ip => `<li>${ip}</li>`).join('');
+            
+            document.getElementById('available-modal').classList.remove('hidden');
+        }
+
+        function closeAvailableModal() {
+            document.getElementById('available-modal').classList.add('hidden');
+        }
+
+        function copyAvailable() {
+            navigator.clipboard.writeText(window.currentAvailableIps.join('\n')).then(() => {
+                alert('Copied ' + window.currentAvailableIps.length + ' addresses to clipboard!');
+            });
+        }
+
+        function exportAvailableCsv() {
+            let csvContent = "data:text/csv;charset=utf-8,IP Address\n" + window.currentAvailableIps.join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "available_ips.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
         async function fetchHistory() {
             const btn = document.getElementById('refresh-btn');
             if (btn) {
@@ -96,6 +166,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         function renderDashboard(data) {
+            window.currentData = data;
             const container = document.getElementById('content');
             container.innerHTML = '';
             
@@ -125,7 +196,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 else if (pct >= 10) colorClass = "bg-amber-500";
 
                 let html = `<div class="bg-white rounded-lg shadow-md mb-6 p-6">
-                    <h2 class="text-2xl font-bold mb-2 text-slate-800">Network: ${network}</h2>
+                    <div class="flex justify-between items-start mb-2">
+                        <h2 class="text-2xl font-bold text-slate-800">Network: ${network}</h2>
+                        <button onclick="showAvailableAddresses('${network}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-4 py-1.5 rounded shadow-sm text-sm font-semibold transition">View Available Addresses</button>
+                    </div>
                     <p class="text-sm text-slate-500 mb-4">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
                     
                     <div class="mb-6">
@@ -200,6 +274,26 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </nav>
     <main class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8" id="content">
         <p class="p-4 text-slate-500">Loading dashboard...</p>
+
+    <!-- Available Addresses Modal -->
+    <div id="available-modal" class="fixed inset-0 bg-slate-900 bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 id="available-title" class="text-lg font-bold text-slate-800">Available Addresses</h3>
+                <button onclick="closeAvailableModal()" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1 bg-slate-50">
+                <ul id="available-list" class="space-y-1 font-mono text-sm text-slate-700"></ul>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-200 bg-slate-100 flex justify-end space-x-3 rounded-b-lg">
+                <button onclick="copyAvailable()" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded shadow-sm text-sm font-semibold transition">Copy to Clipboard</button>
+                <button onclick="exportAvailableCsv()" class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded shadow-sm text-sm font-semibold transition">Export to CSV</button>
+            </div>
+        </div>
+    </div>
+
     </main>
 </body>
 </html>
