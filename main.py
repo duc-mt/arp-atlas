@@ -410,7 +410,7 @@ def load_history(path: str) -> dict[str, Any]:
         return {}
 
 
-def save_scan(path: str, network: str, devices: list[dict[str, Any]]) -> None:
+def save_scan(path: str, network: str, devices: list[dict[str, Any]], stats: dict[str, Any] | None = None) -> None:
     """Persist `devices` as the new most-recent scan for `network`,
     leaving any other network's entry in the history file untouched.
 
