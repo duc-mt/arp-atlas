@@ -114,6 +114,32 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             return available;
         }
 
+        function exportScanCsv(network) {
+            if (!window.currentData || !window.currentData[network]) return;
+            const info = window.currentData[network];
+            
+            let csvContent = "data:text/csv;charset=utf-8,IP Address,MAC Address,Vendor,Hostname,Ports,Role\\n";
+            
+            info.devices.forEach(device => {
+                const ip = device.ip || '';
+                const mac = device.mac || '';
+                const vendor = '"' + (device.vendor || '-').replace(/"/g, '""') + '"';
+                const hostname = '"' + (device.hostname || '-').replace(/"/g, '""') + '"';
+                const ports = '"' + (device.open_ports ? device.open_ports.join(', ') : '-') + '"';
+                const role = device.role || '-';
+                
+                csvContent += `${ip},${mac},${vendor},${hostname},${ports},${role}\\n`;
+            });
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `scan_${network.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
         function showAvailableAddresses(network) {
             if (!window.currentData || !window.currentData[network]) return;
             const info = window.currentData[network];
@@ -211,7 +237,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 let html = `<div class="bg-white rounded-lg shadow-md mb-6 p-6">
                     <div class="flex justify-between items-start mb-2">
                         <h2 class="text-2xl font-bold text-slate-800">Network: ${network}</h2>
-                        <button onclick="showAvailableAddresses('${network}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-4 py-1.5 rounded shadow-sm text-sm font-semibold transition">View Available Addresses</button>
+                        <div class="flex space-x-2">
+                            <button onclick="exportScanCsv('${network}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-1.5 rounded shadow-sm text-sm font-semibold transition">Export Data (CSV)</button>
+                            <button onclick="showAvailableAddresses('${network}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-4 py-1.5 rounded shadow-sm text-sm font-semibold transition">View Available Addresses</button>
+                        </div>
                     </div>
                     <p class="text-sm text-slate-500 mb-4">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
                     
