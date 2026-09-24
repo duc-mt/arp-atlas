@@ -1,10 +1,12 @@
+from __future__ import annotations
+
+import typing
 """Tests for the non-interactive CLI mode.
 
 Exercises main.main() with a mocked sys.argv, which is how a person
 would actually invoke `python main.py --network ...` from a shell.
 """
 
-from __future__ import annotations
 
 from unittest import mock
 
@@ -33,7 +35,7 @@ class TestNetworkRunsCli:
         assert exc_info.value.code == 2
 
     def test_valid_network_scans_and_prints(self, capsys):
-        devices = [{'ip': '192.168.1.1', 'mac': 'aa:aa:aa:aa:aa:aa'}]
+        devices: list[dict[str, typing.Any]] = [{'ip': '192.168.1.1', 'mac': 'aa:aa:aa:aa:aa:aa'}]
         with mock.patch('main.scan_network', return_value=devices), \
              mock.patch('main.lookup_vendor', return_value=None), \
              mock.patch('main.lookup_hostname', return_value=None), \
@@ -104,7 +106,7 @@ class TestScanPortsFlag:
         mock_scan_ports.assert_not_called()
 
     def test_run_when_flag_given(self):
-        devices = [{'ip': '192.168.1.1', 'mac': 'aa:aa:aa:aa:aa:aa'}]
+        devices: list[dict[str, typing.Any]] = [{'ip': '192.168.1.1', 'mac': 'aa:aa:aa:aa:aa:aa'}]
         with mock.patch('main.scan_network', return_value=devices), \
              mock.patch('main.lookup_vendor', return_value=None), \
              mock.patch('main.lookup_hostname', return_value=None), \
@@ -155,7 +157,7 @@ class TestHistoryFlags:
         previous = {
             '192.168.1.0/24': {'timestamp': 'x', 'devices': []},
         }
-        devices = [{'ip': '192.168.1.1', 'mac': 'aa:aa:aa:aa:aa:aa'}]
+        devices: list[dict[str, typing.Any]] = [{'ip': '192.168.1.1', 'mac': 'aa:aa:aa:aa:aa:aa'}]
         with mock.patch('main.scan_network', return_value=devices), \
              mock.patch('main.lookup_vendor', return_value=None), \
              mock.patch('main.lookup_hostname', return_value=None), \

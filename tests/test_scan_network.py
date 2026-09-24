@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 """Tests for main.scan_network().
 
 scapy.srp() actually sending packets requires raw-socket access (root),
@@ -5,7 +8,6 @@ so these tests mock it out entirely and check only the parsing of its
 return value - the part of scan_network() that's ordinary Python logic.
 """
 
-from __future__ import annotations
 
 from unittest import mock
 
@@ -48,7 +50,7 @@ class TestScanNetwork:
             main.scan_network("192.168.1.0/24")
 
         sent_packet = mock_srp.call_args[0][0]
-        assert sent_packet[scapy.ARP].pdst == "192.168.1.0/24"
+        assert sent_packet[getattr(scapy, 'ARP')].pdst == "192.168.1.0/24"
 
     def test_default_timeout_is_used_when_not_given(self):
         with mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp:

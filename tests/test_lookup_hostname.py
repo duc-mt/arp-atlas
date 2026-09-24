@@ -1,10 +1,12 @@
+from __future__ import annotations
+
+import typing
 """Tests for main.lookup_hostname().
 
 socket.getnameinfo() is always mocked - these tests never perform a
 real DNS lookup.
 """
 
-from __future__ import annotations
 
 import asyncio
 import socket
