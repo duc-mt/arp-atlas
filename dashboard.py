@@ -408,8 +408,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 
                 devices = main.scan_network(target_ips, iface=iface)
                 
+                responded_ips = {d.get("ip") for d in devices}
                 wrong_iface_count = 0
                 for ip in target_ips:
+                    if ip in responded_ips:
+                        continue
                     route = scapy.conf.route.route(ip)[0]
                     if hasattr(route, "name"): route = route.name
                     if route != iface:
