@@ -1,0 +1,187 @@
+import sys
+from typing import Any, List, Dict
+
+from PySide6.QtCore import Qt, QThread, Signal, Slot
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
+    QProgressBar, QHeaderView, QCheckBox, QMessageBox
+)
+
+import main
+
+class ScanWorker(QThread):
+    progress = Signal(int, int, str)  # current, total, status text
+    device_found = Signal(dict)       # emitted initially
+    device_updated = Signal(dict)     # emitted after port scan
+    finished_scan = Signal(list)
+    error = Signal(str)
+
+    def __init__(self, network: str, scan_ports: bool):
+        super().__init__()
+        self.network = network
+        self.scan_ports = scan_ports
+
+    def run(self):
+        try:
+            self.progress.emit(0, 0, "Validating network...")
+            valid_network = main.validate_network(self.network)
+            
+            self.progress.emit(0, 0, f"Running ARP discovery on {valid_network}...")
+            devices = main.scan_network(valid_network)
+            
+            if not devices:
+                self.finished_scan.emit([])
+                return
+                
+            self.progress.emit(0, len(devices), "Enriching hostnames & vendors...")
+            main.enrich_devices(devices)
+            
+            # Emit initial discovery data
+            for device in devices:
+                self.device_found.emit(device)
+            
+            if self.scan_ports:
+                self.progress.emit(0, len(devices), "Concurrent TCP Port Scanning...")
+                
+                def port_progress(current: int, total: int, device: Dict[str, Any]):
+                    self.device_updated.emit(device)
+                    self.progress.emit(current, total, f"Port scanning ({current}/{total})...")
+                
+                main.scan_devices_ports(devices, progress_callback=port_progress)
+            
+            self.progress.emit(len(devices), len(devices), "Saving history...")
+            main.save_scan(main.HISTORY_FILE, valid_network, devices)
+            self.finished_scan.emit(devices)
+            
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class NetworkHunterGUI(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Network Hunter (PySide6)")
+        self.resize(900, 600)
+        self.worker = None
+        self.row_map = {}  # Map IP to row index
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout(central_widget)
+
+        # Top Bar
+        top_layout = QHBoxLayout()
+        top_layout.addWidget(QLabel("Network:"))
+        
+        self.network_input = QLineEdit()
+        self.network_input.setPlaceholderText("e.g. 192.168.1.0/24")
+        top_layout.addWidget(self.network_input)
+        
+        self.ports_checkbox = QCheckBox("Scan Ports")
+        top_layout.addWidget(self.ports_checkbox)
+        
+        self.scan_btn = QPushButton("Scan")
+        self.scan_btn.clicked.connect(self.start_scan)
+        top_layout.addWidget(self.scan_btn)
+        
+        layout.addLayout(top_layout)
+
+        # Table
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["IP Address", "MAC Address", "Vendor", "Hostname", "Open Ports", "Role"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+
+        # Status Bar / Progress
+        status_layout = QHBoxLayout()
+        self.status_label = QLabel("Ready")
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        
+        status_layout.addWidget(self.status_label)
+        status_layout.addWidget(self.progress_bar, stretch=1)
+        layout.addLayout(status_layout)
+
+    def start_scan(self):
+        network = self.network_input.text().strip()
+        if not network:
+            QMessageBox.warning(self, "Input Error", "Please enter a network address.")
+            return
+
+        self.scan_btn.setEnabled(False)
+        self.table.setRowCount(0)
+        self.row_map.clear()
+        
+        self.worker = ScanWorker(network, self.ports_checkbox.isChecked())
+        self.worker.progress.connect(self.update_progress)
+        self.worker.device_found.connect(self.add_device_row)
+        self.worker.device_updated.connect(self.update_device_row)
+        self.worker.finished_scan.connect(self.scan_finished)
+        self.worker.error.connect(self.scan_error)
+        
+        self.worker.start()
+
+    @Slot(int, int, str)
+    def update_progress(self, current: int, total: int, status: str):
+        self.status_label.setText(status)
+        if total > 0:
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+        else:
+            self.progress_bar.setMaximum(0)  # Indeterminate mode
+
+    @Slot(dict)
+    def add_device_row(self, device: dict):
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.row_map[device["ip"]] = row
+        self._populate_row(row, device)
+
+    @Slot(dict)
+    def update_device_row(self, device: dict):
+        row = self.row_map.get(device["ip"])
+        if row is not None:
+            self._populate_row(row, device)
+
+    def _populate_row(self, row: int, device: dict):
+        self.table.setItem(row, 0, QTableWidgetItem(device.get("ip", "")))
+        
+        mac_text = f"{device.get('mac', '')} (Random)" if device.get("is_randomized") else device.get("mac", "")
+        self.table.setItem(row, 1, QTableWidgetItem(mac_text))
+        
+        self.table.setItem(row, 2, QTableWidgetItem(device.get("vendor", "-") or "-"))
+        self.table.setItem(row, 3, QTableWidgetItem(device.get("hostname", "-") or "-"))
+        
+        ports = device.get("open_ports")
+        ports_text = ", ".join(map(str, ports)) if ports else "-"
+        self.table.setItem(row, 4, QTableWidgetItem(ports_text))
+        
+        self.table.setItem(row, 5, QTableWidgetItem(device.get("role", "-").capitalize()))
+
+    @Slot(list)
+    def scan_finished(self, devices: list):
+        self.scan_btn.setEnabled(True)
+        self.progress_bar.setMaximum(1)
+        self.progress_bar.setValue(1)
+        self.status_label.setText(f"Scan complete! Found {len(devices)} devices.")
+
+    @Slot(str)
+    def scan_error(self, err_msg: str):
+        self.scan_btn.setEnabled(True)
+        self.progress_bar.setMaximum(1)
+        self.progress_bar.setValue(0)
+        self.status_label.setText("Scan failed.")
+        QMessageBox.critical(self, "Scan Error", f"An error occurred:\n{err_msg}")
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    window = NetworkHunterGUI()
+    window.show()
+    sys.exit(app.exec())
