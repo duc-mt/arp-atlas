@@ -13,6 +13,7 @@ import main
 class ScanWorker(QThread):
     progress = Signal(int, int, str)  # current, total, status text
     device_found = Signal(dict)       # emitted initially
+    discovery_summary = Signal(int, int) # found, total
     device_updated = Signal(dict)     # emitted after port scan
     finished_scan = Signal(list)
     error = Signal(str)
@@ -29,6 +30,12 @@ class ScanWorker(QThread):
             
             self.progress.emit(0, 0, f"Running ARP discovery on {valid_network}...")
             devices = main.scan_network(valid_network)
+            
+            import ipaddress
+            net_obj = ipaddress.ip_network(valid_network, strict=False)
+            total_ips = net_obj.num_addresses
+            total_hosts = total_ips - 2 if net_obj.version == 4 and net_obj.prefixlen <= 30 else total_ips
+            self.discovery_summary.emit(len(devices), total_hosts)
             
             if not devices:
                 self.finished_scan.emit([])
@@ -89,6 +96,16 @@ class NetworkHunterGUI(QMainWindow):
         top_layout.addWidget(self.scan_btn)
         
         layout.addLayout(top_layout)
+        
+        # Summary Bar (Hidden by default until scan starts)
+        self.summary_layout = QHBoxLayout()
+        self.summary_label = QLabel("Waiting for scan...")
+        self.summary_bar = QProgressBar()
+        self.summary_bar.setTextVisible(False)
+        self.summary_bar.setFixedHeight(12)
+        self.summary_layout.addWidget(self.summary_label)
+        self.summary_layout.addWidget(self.summary_bar, stretch=1)
+        layout.addLayout(self.summary_layout)
 
         # Table
         self.table = QTableWidget(0, 6)
@@ -118,13 +135,39 @@ class NetworkHunterGUI(QMainWindow):
         self.row_map.clear()
         
         self.worker = ScanWorker(network, self.ports_checkbox.isChecked())
+        self.summary_label.setText("Scanning...")
+        self.summary_bar.setValue(0)
+        self.summary_bar.setStyleSheet("")
+        
         self.worker.progress.connect(self.update_progress)
+        self.worker.discovery_summary.connect(self.update_discovery_summary)
         self.worker.device_found.connect(self.add_device_row)
         self.worker.device_updated.connect(self.update_device_row)
         self.worker.finished_scan.connect(self.scan_finished)
         self.worker.error.connect(self.scan_error)
         
         self.worker.start()
+
+    SUMMARY_THRESHOLD_GOOD = 50.0
+    SUMMARY_THRESHOLD_WARN = 10.0
+
+    @Slot(int, int)
+    def update_discovery_summary(self, found: int, total: int):
+        if total <= 0:
+            total = 1
+        pct = (found / total) * 100
+        self.summary_label.setText(f"{found} of {total} addresses found ({pct:.1f}%)")
+        self.summary_bar.setMaximum(total)
+        self.summary_bar.setValue(found)
+        
+        if pct >= self.SUMMARY_THRESHOLD_GOOD:
+            color = "#10b981"  # Emerald
+        elif pct >= self.SUMMARY_THRESHOLD_WARN:
+            color = "#f59e0b"  # Amber
+        else:
+            color = "#ef4444"  # Red
+            
+        self.summary_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; border-radius: 2px; }} QProgressBar {{ background-color: #e2e8f0; border-radius: 2px; }}")
 
     @Slot(int, int, str)
     def update_progress(self, current: int, total: int, status: str):
