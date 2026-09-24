@@ -292,7 +292,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         <input type="checkbox" id="scan-ports" class="mr-2"> Scan Ports
                     </label>
                     <button onclick="triggerScan()" id="scan-btn" class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Scan Network</button>
-                    <button onclick="fetchHistory()" id="refresh-btn" class="bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Refresh</button>
+                    
                     <button onclick="clearHistory()" class="bg-red-500 hover:bg-red-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Clear</button>
                 </div>
             </div>
