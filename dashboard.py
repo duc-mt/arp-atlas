@@ -114,11 +114,54 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             return available;
         }
 
+        function downloadCsv(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
         function exportScanCsv(network) {
             if (!window.currentData || !window.currentData[network]) return;
             const info = window.currentData[network];
             
-            let csvContent = "data:text/csv;charset=utf-8,IP Address,MAC Address,Vendor,Hostname,Ports,Role\\n";
+            const foundHosts = info.devices.length;
+            let stats = info.stats || { responded: foundHosts, wrong_iface: 0, no_response: 0 };
+            let totalHosts = stats.responded + stats.wrong_iface + stats.no_response;
+            if (totalHosts <= 0) totalHosts = 1;
+            
+            const foundIps = info.devices.map(d => d.ip);
+            const baseNet = network.split(' on ')[0];
+            let available = [];
+            if (baseNet.includes('-')) {
+                const parts = baseNet.split('-');
+                if (parts.length === 2) {
+                    available = getAvailableIpsRange(parts[0], parts[1], foundIps);
+                }
+            } else if (baseNet.includes('/')) {
+                available = getAvailableIpsCidr(baseNet, foundIps);
+            }
+            
+            let csvContent = "--- Scan Summary ---\\n";
+
+            csvContent += `Network,${network}\\n`;
+
+            csvContent += `Addresses Found,${stats.responded}\\n`;
+
+            csvContent += `Total Addresses,${totalHosts}\\n`;
+
+            csvContent += `Available Addresses,${available.length}\\n\\n`;
+
+            
+            csvContent += "--- Active Devices ---\\n";
+
+            csvContent += "IP Address,MAC Address,Vendor,Hostname,Ports,Role\\n";
+
             
             info.devices.forEach(device => {
                 const ip = device.ip || '';
@@ -127,17 +170,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const hostname = '"' + (device.hostname || '-').replace(/"/g, '""') + '"';
                 const ports = '"' + (device.open_ports ? device.open_ports.join(', ') : '-') + '"';
                 const role = device.role || '-';
-                
                 csvContent += `${ip},${mac},${vendor},${hostname},${ports},${role}\\n`;
+
             });
             
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `scan_${network.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            csvContent += "\\n--- Available Addresses ---\\n";
+
+            csvContent += "IP Address\\n";
+
+            available.forEach(ip => {
+                csvContent += `${ip}\\n`;
+
+            });
+            
+            downloadCsv(csvContent, `scan_${network.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
         }
 
         function showAvailableAddresses(network) {
@@ -174,14 +220,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         function exportAvailableCsv() {
-            let csvContent = "data:text/csv;charset=utf-8,IP Address\\n" + window.currentAvailableIps.join("\\n");
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", "available_ips.csv");
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            let csvContent = "IP Address\\n" + window.currentAvailableIps.join("\\n");
+            downloadCsv(csvContent, "available_ips.csv");
         }
 
         async function fetchHistory() {
