@@ -46,6 +46,23 @@ Python 3.
 
 # Usage
 
+### Web Dashboard (`--dashboard`)
+A zero-dependency, locally-hosted web interface powered by Python's built-in `http.server` and Tailwind CSS.
+Features include:
+- **Interface Selector:** Select your specific local network adapter (e.g. `en0`) to strictly bind ARP broadcasts.
+- **Granular IPv4 Ranges:** Scan explicit bounds (e.g., `192.168.1.1` to `192.168.1.254`) rather than just raw CIDR blocks.
+- **Analytics & Pie Charts:** Visual breakdown using Chart.js to show "Responded", "Other Interface" (via routing checks), and "No Response" metrics.
+- **Available Addresses:** One-click modal to calculate mathematically free IP addresses based on the scan range, complete with "Copy to Clipboard" and "Export to CSV".
+- **Real-time Live Refresh:** Automatically clears the DOM container between loads to display real-time fetched progress.
+
+To launch:
+```bash
+sudo python main.py --dashboard
+```
+Navigate to `http://localhost:8080` in your web browser.
+
+
+
 To use this project, you can run the script main.py from the command
 line as root, either interactively:
 
