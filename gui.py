@@ -2,10 +2,12 @@ import sys
 from typing import Any, List, Dict
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
+import ipaddress
+import csv
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
-    QProgressBar, QHeaderView, QCheckBox, QMessageBox
+    QProgressBar, QHeaderView, QCheckBox, QMessageBox, QDialog, QListWidget, QFileDialog
 )
 
 import main
@@ -65,6 +67,55 @@ class ScanWorker(QThread):
             self.error.emit(str(e))
 
 
+
+class AvailableAddressesDialog(QDialog):
+    def __init__(self, network_str: str, found_ips: set, parent=None):
+        super().__init__(parent)
+        
+        try:
+            net = ipaddress.ip_network(network_str, strict=False)
+            all_hosts = set(str(ip) for ip in net.hosts())
+            self.available_ips = sorted(list(all_hosts - found_ips), key=lambda ip: ipaddress.ip_address(ip))
+        except ValueError:
+            self.available_ips = []
+
+        self.setWindowTitle(f"Available Addresses ({len(self.available_ips)})")
+        self.resize(400, 500)
+        
+        layout = QVBoxLayout(self)
+        
+        self.list_widget = QListWidget()
+        self.list_widget.addItems(self.available_ips)
+        layout.addWidget(self.list_widget)
+        
+        btn_layout = QHBoxLayout()
+        
+        self.copy_btn = QPushButton("Copy to Clipboard")
+        self.copy_btn.clicked.connect(self.copy_to_clipboard)
+        
+        self.export_btn = QPushButton("Export to CSV")
+        self.export_btn.clicked.connect(self.export_csv)
+        
+        btn_layout.addWidget(self.copy_btn)
+        btn_layout.addWidget(self.export_btn)
+        
+        layout.addLayout(btn_layout)
+        
+    def copy_to_clipboard(self):
+        clipboard = QApplication.clipboard()
+        clipboard.setText("\n".join(self.available_ips))
+        QMessageBox.information(self, "Copied", f"Copied {len(self.available_ips)} addresses to clipboard.")
+        
+    def export_csv(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Export to CSV", "available_ips.csv", "CSV Files (*.csv)")
+        if path:
+            with open(path, "w", newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["IP Address"])
+                for ip in self.available_ips:
+                    writer.writerow([ip])
+            QMessageBox.information(self, "Exported", f"Successfully exported to {path}")
+
 class NetworkHunterGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -72,6 +123,8 @@ class NetworkHunterGUI(QMainWindow):
         self.resize(900, 600)
         self.worker = None
         self.row_map = {}  # Map IP to row index
+        self.last_scanned_network = ""
+        self.last_found_ips = set()
 
         self._setup_ui()
 
@@ -105,6 +158,12 @@ class NetworkHunterGUI(QMainWindow):
         self.summary_bar.setFixedHeight(12)
         self.summary_layout.addWidget(self.summary_label)
         self.summary_layout.addWidget(self.summary_bar, stretch=1)
+        
+        self.view_available_btn = QPushButton("View Available Addresses")
+        self.view_available_btn.setEnabled(False)
+        self.view_available_btn.clicked.connect(self.show_available_addresses)
+        self.summary_layout.addWidget(self.view_available_btn)
+        
         layout.addLayout(self.summary_layout)
 
         # Table
@@ -131,6 +190,7 @@ class NetworkHunterGUI(QMainWindow):
             return
 
         self.scan_btn.setEnabled(False)
+        self.view_available_btn.setEnabled(False)
         self.table.setRowCount(0)
         self.row_map.clear()
         
@@ -209,9 +269,16 @@ class NetworkHunterGUI(QMainWindow):
     @Slot(list)
     def scan_finished(self, devices: list):
         self.scan_btn.setEnabled(True)
+        self.view_available_btn.setEnabled(True)
+        self.last_scanned_network = self.network_input.text().strip()
+        self.last_found_ips = {d.get("ip") for d in devices}
         self.progress_bar.setMaximum(1)
         self.progress_bar.setValue(1)
         self.status_label.setText(f"Scan complete! Found {len(devices)} devices.")
+        
+    def show_available_addresses(self):
+        dialog = AvailableAddressesDialog(self.last_scanned_network, self.last_found_ips, self)
+        dialog.exec()
 
     @Slot(str)
     def scan_error(self, err_msg: str):
