@@ -4,6 +4,8 @@ __pycache__/
 .ruff_cache/
 .coverage
 coverage.xml
+.venv/
+.mypy_cache/
 
 # Generated at runtime by scan history/diffing - not something to
 # commit, since it's specific to whoever ran the scan and when.

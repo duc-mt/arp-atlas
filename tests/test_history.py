@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import main
 
 
@@ -15,7 +17,7 @@ class TestLoadHistory:
 
     def test_reads_back_what_was_saved(self, tmp_path):
         path = str(tmp_path / "scan_history.json")
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         main.save_scan(path, "192.168.1.0/24", devices)
 
         history = main.load_history(path)
@@ -56,7 +58,7 @@ class TestSaveScan:
 
 class TestDiffDevices:
     def test_no_changes_produces_empty_diff(self):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         diff = main.diff_devices(devices, devices)
         assert diff == {"new": [], "missing": [], "ip_changed": []}
 

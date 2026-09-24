@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import main
 
 
@@ -37,14 +39,14 @@ class TestPrintResults:
         """A plain, un-enriched device dict (e.g. straight from
         scan_network(), before enrich_devices() runs) must still print
         cleanly rather than raising a KeyError."""
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         main.print_results(devices)  # must not raise
 
         out = capsys.readouterr().out
         assert "192.168.1.1" in out
 
     def test_role_and_ports_columns_omitted_without_a_port_scan(self, capsys):
-        devices = [{
+        devices: list[dict[str, typing.Any]] = [{
             "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
             "vendor": None, "hostname": None,
         }]
@@ -55,7 +57,7 @@ class TestPrintResults:
         assert "Open Ports" not in out
 
     def test_role_and_ports_columns_shown_after_a_port_scan(self, capsys):
-        devices = [{
+        devices: list[dict[str, typing.Any]] = [{
             "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
             "vendor": None, "hostname": None,
             "open_ports": [22, 80], "role": "server",
@@ -71,7 +73,7 @@ class TestPrintResults:
     def test_no_open_ports_shows_a_placeholder_not_an_empty_cell(
         self, capsys
     ):
-        devices = [{
+        devices: list[dict[str, typing.Any]] = [{
             "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
             "vendor": None, "hostname": None,
             "open_ports": [], "role": "unknown",

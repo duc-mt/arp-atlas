@@ -22,6 +22,7 @@ from rich.theme import Theme
 # Stdlib
 import argparse
 import asyncio
+from typing import Any
 import collections
 import csv
 import datetime
@@ -49,7 +50,7 @@ COMMON_PORTS = [22, 80, 443, 3389, 9100]
 
 
 # ---------------------------- Function Definitions ---------------------------
-def validate_network(network):
+def validate_network(network: str) -> str:
     """Validate and normalise a user-supplied network address.
 
     Parameters
@@ -87,7 +88,7 @@ def validate_network(network):
 
 
 # Define a function to scan a network
-def scan_network(network, timeout=DEFAULT_TIMEOUT):
+def scan_network(network: str, timeout: float = DEFAULT_TIMEOUT) -> list[dict[str, Any]]:
     """Send an ARP broadcast to `network` and collect the replies.
 
     Parameters
@@ -114,12 +115,12 @@ def scan_network(network, timeout=DEFAULT_TIMEOUT):
     # Create an ARP request packet with the network address
     # ARP is used to map IP addresses to MAC addresses
     # pdst is the parameter for the destination IP address
-    arp_request = scapy.ARP(pdst=network)
+    arp_request = scapy.ARP(pdst=network)  # type: ignore[attr-defined]
     # Create an Ethernet broadcast packet
     # Ethernet is a protocol for data transmission over a network
     # dst is the parameter for the destination MAC address
     # ff:ff:ff:ff:ff:ff is the MAC address for broadcasting to all devices
-    broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
+    broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")  # type: ignore[attr-defined]
     # Combine the ARP request and the Ethernet broadcast
     # This creates a packet asking all network devices for their MAC addresses
     arp_broadcast = broadcast / arp_request
@@ -146,7 +147,7 @@ def scan_network(network, timeout=DEFAULT_TIMEOUT):
     return devices
 
 
-def lookup_vendor(mac):
+def lookup_vendor(mac: str) -> str | None:
     """Look up the manufacturer that registered a MAC address's OUI
     (its first three octets), e.g. "b8:27:eb:11:22:33" ->
     "Raspberry Pi Foundation".
@@ -175,7 +176,7 @@ def lookup_vendor(mac):
     return vendor
 
 
-async def _lookup_hostname_async(ip, timeout):
+async def _lookup_hostname_async(ip: str, timeout: float) -> str | None:
     loop = asyncio.get_running_loop()
     try:
         host, _ = await asyncio.wait_for(
@@ -187,7 +188,7 @@ async def _lookup_hostname_async(ip, timeout):
         return None
 
 
-def lookup_hostname(ip, timeout=0.3):
+def lookup_hostname(ip: str, timeout: float = 0.3) -> str | None:
     """Attempt a reverse DNS lookup for an IP address.
 
     Parameters
@@ -210,14 +211,14 @@ def lookup_hostname(ip, timeout=0.3):
         return None
 
 
-async def _enrich_devices_async(devices):
+async def _enrich_devices_async(devices: list[dict[str, Any]]) -> None:
     tasks = [_lookup_hostname_async(d["ip"], 0.3) for d in devices]
     hostnames = await asyncio.gather(*tasks)
     for d, h in zip(devices, hostnames):
         d["hostname"] = h
 
 
-def enrich_devices(devices):
+def enrich_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Add "vendor" and "hostname" fields to each device dict in
     place, using lookup_vendor() and lookup_hostname().
 
@@ -241,7 +242,7 @@ def enrich_devices(devices):
     return devices
 
 
-def find_ip_conflicts(devices):
+def find_ip_conflicts(devices: list[dict[str, Any]]) -> dict[str, list[str]]:
     """Find any IP address that answered from more than one distinct
     MAC address in this scan.
 
@@ -271,7 +272,7 @@ def find_ip_conflicts(devices):
     }
 
 
-def scan_device_ports(ip, ports=COMMON_PORTS, timeout=0.3):
+def scan_device_ports(ip: str, ports: list[int] = COMMON_PORTS, timeout: float = 0.3) -> list[int]:
     """Attempt a TCP connect to each port in `ports` and return the
     ones that accepted a connection.
 
@@ -309,7 +310,7 @@ def scan_device_ports(ip, ports=COMMON_PORTS, timeout=0.3):
     return open_ports
 
 
-def classify_device(vendor, open_ports):
+def classify_device(vendor: str | None, open_ports: list[int]) -> str:
     """A rough, best-effort guess at a device's role from its vendor
     name and open ports. Not authoritative - just a helpful label.
 
@@ -345,7 +346,7 @@ def classify_device(vendor, open_ports):
     return "unknown"
 
 
-def scan_devices_ports(devices, ports=COMMON_PORTS, timeout=0.3):
+def scan_devices_ports(devices: list[dict[str, Any]], ports: list[int] = COMMON_PORTS, timeout: float = 0.3) -> list[dict[str, Any]]:
     """Add "open_ports" and "role" fields to each device dict in
     place, using scan_device_ports() and classify_device().
 
@@ -368,7 +369,7 @@ def scan_devices_ports(devices, ports=COMMON_PORTS, timeout=0.3):
     return devices
 
 
-def load_history(path):
+def load_history(path: str) -> dict[str, Any]:
     """Load previously-persisted scan results, keyed by the exact
     network string that was scanned.
 
@@ -387,12 +388,13 @@ def load_history(path):
     """
     try:
         with open(path) as f:
-            return json.load(f)
+            import typing
+            return typing.cast(dict[str, Any], json.load(f))
     except (OSError, json.JSONDecodeError):
         return {}
 
 
-def save_scan(path, network, devices):
+def save_scan(path: str, network: str, devices: list[dict[str, Any]]) -> None:
     """Persist `devices` as the new most-recent scan for `network`,
     leaving any other network's entry in the history file untouched.
 
@@ -415,7 +417,7 @@ def save_scan(path, network, devices):
         json.dump(history, f, indent=2)
 
 
-def diff_devices(previous_devices, current_devices):
+def diff_devices(previous_devices: list[dict[str, Any]], current_devices: list[dict[str, Any]]) -> dict[str, list]:
     """Compare two device lists by MAC address - a device's MAC is a
     far more stable identifier than its IP, which can easily change
     between scans under DHCP - and report what changed.
@@ -454,7 +456,7 @@ def diff_devices(previous_devices, current_devices):
     return {"new": new, "missing": missing, "ip_changed": ip_changed}
 
 
-def export_devices(devices, path, fmt=None):
+def export_devices(devices: list[dict[str, Any]], path: str, fmt: str | None = None) -> None:
     """Write `devices` to a CSV or JSON file.
 
     Parameters
@@ -510,7 +512,7 @@ def export_devices(devices, path, fmt=None):
 
 
 # Define a function to print the results
-def print_results(devices):
+def print_results(devices: list[dict[str, Any]]) -> None:
     if not devices:
         print('\nNo devices found.')
         return
@@ -536,7 +538,7 @@ def print_results(devices):
         print("\t\t".join(row))
 
 
-def print_conflicts(conflicts):
+def print_conflicts(conflicts: dict[str, list[str]]) -> None:
     """Print a warning for each IP address that answered from more
     than one MAC address - see find_ip_conflicts()."""
     for ip, macs in conflicts.items():
@@ -547,7 +549,7 @@ def print_conflicts(conflicts):
         )
 
 
-def print_diff(diff):
+def print_diff(diff: dict[str, list]) -> None:
     """Print a summary of what changed since the last scan of this
     network - see diff_devices()."""
     if diff["new"]:
@@ -564,7 +566,7 @@ def print_diff(diff):
             print(f"  ~ {device['mac']}\t{old_ip} -> {device['ip']}")
 
 
-def print_error(message):
+def print_error(message: str) -> None:
     """Print an error message in red using rich, via a shared console."""
     custom_theme = Theme({"danger": "red"})
     console = Console(theme=custom_theme)
@@ -572,7 +574,7 @@ def print_error(message):
 
 
 # --------------------------- Interactive Session ------------------------------
-def run_interactive():
+def run_interactive() -> int:
     """Run the interactive session (the original behaviour of this
     program), extended with the opt-in port scan, history diff, and
     export prompts added below.
@@ -643,7 +645,7 @@ def run_interactive():
 
 
 # ------------------------------ Non-Interactive CLI ---------------------------
-def build_arg_parser():
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Scan a local network for devices via ARP, identifying "
                      "each one's IP and MAC address. Run with no arguments "
@@ -688,7 +690,7 @@ def build_arg_parser():
     return parser
 
 
-def run_cli(args, parser):
+def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Run one CLI-mode scan and return a process exit code."""
     try:
         network = validate_network(args.network)
@@ -733,7 +735,7 @@ def run_cli(args, parser):
 
 
 # ------------------------------- Main Function -------------------------------
-def main():
+def main() -> int:
     parser = build_arg_parser()
     args = parser.parse_args()
 

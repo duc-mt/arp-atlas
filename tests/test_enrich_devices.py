@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 from unittest import mock
 
 import main
@@ -25,7 +27,7 @@ class TestEnrichDevices:
         assert result[1]["hostname"] == "host-b.local"
 
     def test_mutates_in_place_and_returns_the_same_list(self):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
 
         with mock.patch("main.lookup_vendor", return_value=None), \
              mock.patch("main._lookup_hostname_async", return_value=None):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import socket
 import threading
 from unittest import mock
@@ -98,12 +100,12 @@ class TestClassifyDevice:
         assert main.classify_device("Cisco Systems", [9100]) == "printer"
 
     def test_none_vendor_and_none_ports_do_not_crash(self):
-        assert main.classify_device(None, None) == "unknown"
+        assert main.classify_device(None, []) == "unknown"
 
 
 class TestScanDevicesPorts:
     def test_adds_open_ports_and_role_to_each_device(self):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
 
         with mock.patch(
             "main.scan_device_ports", return_value=[22]
@@ -114,7 +116,7 @@ class TestScanDevicesPorts:
         assert result[0]["role"] == "server"
 
     def test_uses_vendor_from_the_device_for_classification(self):
-        devices = [{
+        devices: list[dict[str, typing.Any]] = [{
             "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
             "vendor": "Cisco Systems",
         }]
@@ -125,7 +127,7 @@ class TestScanDevicesPorts:
         assert result[0]["role"] == "router/switch"
 
     def test_mutates_in_place_and_returns_the_same_list(self):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
 
         with mock.patch("main.scan_device_ports", return_value=[]):
             result = main.scan_devices_ports(devices)

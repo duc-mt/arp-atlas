@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import csv
 import json
 
@@ -8,7 +10,7 @@ import pytest
 import main
 
 
-DEVICES = [
+DEVICES: list[dict[str, typing.Any]] = [
     {
         "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff",
         "vendor": "Acme Inc.", "hostname": "router.local",
@@ -52,7 +54,7 @@ class TestExportDevicesCsv:
         assert header == ["ip", "mac", "vendor", "hostname"]
 
     def test_open_ports_are_joined_with_semicolons(self, tmp_path):
-        devices = [{
+        devices: list[dict[str, typing.Any]] = [{
             "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff",
             "vendor": None, "hostname": None,
             "open_ports": [22, 80, 443], "role": "server",
