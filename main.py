@@ -429,6 +429,8 @@ def save_scan(path: str, network: str, devices: list[dict[str, Any]], stats: dic
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "devices": devices,
     }
+    if stats:
+        history[network]["stats"] = stats
     with open(path, 'w') as f:
         json.dump(history, f, indent=2)
 
