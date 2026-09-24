@@ -696,7 +696,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--dashboard", action="store_true",
-        help="Launch the web dashboard on port 8080.",
+        help="Launch the web dashboard.",
+    )
+    parser.add_argument(
+        "--port", type=int, default=8080,
+        help="Port to run the dashboard on (default: 8080).",
     )
     parser.add_argument(
         "--no-history", action="store_true",
@@ -759,7 +763,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.dashboard:
-        dashboard.run_dashboard()
+        dashboard.run_dashboard(port=args.port)
         return 0
 
     if args.network is None:
