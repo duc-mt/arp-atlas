@@ -426,31 +426,31 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         window.onload = fetchHistory;
     </script>
 </head>
-<body class="bg-slate-100 min-h-screen font-sans">
-    <nav class="bg-indigo-600 shadow-lg">
+<body class="bg-bg min-h-screen font-sans">
+    <nav class="bg-panel border-b border-border shadow-sm">
         
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col sm:flex-row items-center justify-between h-auto sm:h-16 py-4 sm:py-0">
                 <div class="flex items-center mb-4 sm:mb-0">
-                    <span class="font-bold text-white text-xl">Network Hunter</span>
+                    <span class="font-semibold text-text text-lg tracking-tight">Network Hunter</span>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <select id="iface-select" class="px-3 py-1.5 rounded text-slate-700 bg-white border-0">
+                <div class="flex flex-wrap items-center gap-3">
+                    <select id="iface-select" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text focus:outline-none focus:border-accent">
                         <!-- IFACE_OPTIONS -->
                     </select>
-                    <input type="text" id="scan-target" placeholder="192.168.1.0/24 or 10.0.0.1-10.0.0.50" class="px-3 py-1.5 rounded text-slate-700 w-64 border-0 focus:ring-2 focus:ring-indigo-300">
-                    <label class="flex items-center text-white text-sm font-medium">
-                        <input type="checkbox" id="scan-ports" class="mr-2"> Scan Ports
+                    <input type="text" id="scan-target" placeholder="192.168.1.0/24 or 10.0.0.1-10.0.0.50" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text focus:outline-none focus:border-accent w-64 placeholder-muted">
+                    <label class="flex items-center text-text text-xs font-medium cursor-pointer">
+                        <input type="checkbox" id="scan-ports" class="mr-1.5 accent-accent"> Scan Ports
                     </label>
-                    <button onclick="triggerScan()" id="scan-btn" class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Scan Network</button>
+                    <button onclick="triggerScan()" id="scan-btn" class="text-xs px-4 py-1.5 rounded-control bg-accent text-bg hover:opacity-90 font-medium transition-opacity">Scan Network</button>
                     
-                    <button onclick="clearHistory()" class="bg-red-500 hover:bg-red-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Clear</button>
+                    <button onclick="clearHistory()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-offline hover:border-offline transition-colors">Clear</button>
                 </div>
             </div>
         </div>
     </nav>
     <main class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8" id="content">
-        <p class="p-4 text-slate-500">Loading dashboard...</p>
+        <p class="p-4 text-muted text-sm">Loading dashboard...</p>
     </main>
 
     <!-- Available Addresses Modal -->
