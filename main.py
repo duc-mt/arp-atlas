@@ -89,7 +89,7 @@ def validate_network(network: str) -> str:
 
 
 # Define a function to scan a network
-def scan_network(network: str, timeout: float = DEFAULT_TIMEOUT) -> list[dict[str, Any]]:
+def scan_network(network: str | list[str], timeout: float = DEFAULT_TIMEOUT, iface: str | None = None) -> list[dict[str, Any]]:
     """Send an ARP broadcast to `network` and collect the replies.
 
     Parameters
@@ -130,7 +130,7 @@ def scan_network(network: str, timeout: float = DEFAULT_TIMEOUT) -> list[dict[st
     # timeout is the parameter for how long to wait for a response
     # verbose is the parameter for whether to print the details of the packets
     answered, unanswered = scapy.srp(
-        arp_broadcast, timeout=timeout, verbose=False
+        arp_broadcast, timeout=timeout, verbose=False, iface=iface
     )
     # Create a list to store the IP and MAC addresses
     devices = []
