@@ -21,6 +21,7 @@ from rich.theme import Theme
 
 # Stdlib
 import argparse
+import dashboard
 import asyncio
 from typing import Any
 import collections
@@ -147,6 +148,15 @@ def scan_network(network: str, timeout: float = DEFAULT_TIMEOUT) -> list[dict[st
     return devices
 
 
+
+def is_mac_randomized(mac: str) -> bool:
+    try:
+        first_octet = int(mac.split(":")[0], 16)
+        return bool(first_octet & 0x02)
+    except (ValueError, IndexError):
+        return False
+
+
 def lookup_vendor(mac: str) -> str | None:
     """Look up the manufacturer that registered a MAC address's OUI
     (its first three octets), e.g. "b8:27:eb:11:22:33" ->
@@ -235,6 +245,7 @@ def enrich_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     for device in devices:
         device["vendor"] = lookup_vendor(device["mac"])
+        device["is_randomized"] = is_mac_randomized(device["mac"])
     
     if devices:
         asyncio.run(_enrich_devices_async(devices))
@@ -346,26 +357,19 @@ def classify_device(vendor: str | None, open_ports: list[int]) -> str:
     return "unknown"
 
 
+import concurrent.futures
+
 def scan_devices_ports(devices: list[dict[str, Any]], ports: list[int] = COMMON_PORTS, timeout: float = 0.3) -> list[dict[str, Any]]:
     """Add "open_ports" and "role" fields to each device dict in
-    place, using scan_device_ports() and classify_device().
-
-    Parameters
-    ----------
-    devices : list[dict]
-        Devices as returned by scan_network() (ideally already
-        enriched via enrich_devices(), since classify_device() uses
-        vendor if available).
-
-    Returns
-    -------
-    list[dict]
-        The same list, for convenient chaining.
+    place, using scan_device_ports() and classify_device(), utilizing threads for speed.
     """
-    for device in devices:
+    def _scan(device: dict[str, Any]) -> None:
         open_ports = scan_device_ports(device["ip"], ports, timeout)
         device["open_ports"] = open_ports
         device["role"] = classify_device(device.get("vendor"), open_ports)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+        executor.map(_scan, devices)
     return devices
 
 
@@ -527,7 +531,8 @@ def print_results(devices: list[dict[str, Any]]) -> None:
         # un-enriched device list (e.g. in tests).
         vendor = device.get("vendor") or "-"
         hostname = device.get("hostname") or "-"
-        row = [device["ip"], device["mac"], vendor, hostname]
+        mac_display = f"{device['mac']} (Random)" if device.get("is_randomized") else device["mac"]
+        row = [device["ip"], mac_display, vendor, hostname]
         if show_ports:
             open_ports = device.get("open_ports") or []
             ports_str = (
@@ -686,6 +691,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
              f"scans (default: {HISTORY_FILE}).",
     )
     parser.add_argument(
+        "--stream-jsonl", action="store_true",
+        help="Output results as JSON lines to stdout (disables regular table printing).",
+    )
+    parser.add_argument(
+        "--dashboard", action="store_true",
+        help="Launch the web dashboard on port 8080.",
+    )
+    parser.add_argument(
         "--no-history", action="store_true",
         help="Don't compare against or update scan history.",
     )
@@ -717,7 +730,11 @@ def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.scan_ports:
         scan_devices_ports(devices)
 
-    print_results(devices)
+    if args.stream_jsonl:
+        for device in devices:
+            print(json.dumps(device))
+    else:
+        print_results(devices)
 
     if not args.no_history:
         history = load_history(args.history_file)
@@ -740,6 +757,10 @@ def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 def main() -> int:
     parser = build_arg_parser()
     args = parser.parse_args()
+
+    if args.dashboard:
+        dashboard.run_dashboard()
+        return 0
 
     if args.network is None:
         return run_interactive()
