@@ -105,9 +105,39 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             });
             
             for (const [network, info] of sortedEntries) {
+                let totalHosts = 1;
+                if (network.includes('/')) {
+                    const prefix = parseInt(network.split('/')[1], 10);
+                    if (!network.includes(':')) {
+                        const totalIps = Math.pow(2, 32 - prefix);
+                        totalHosts = prefix <= 30 ? totalIps - 2 : totalIps;
+                    }
+                }
+                const foundHosts = info.devices.length;
+                let pct = 0;
+                if (totalHosts > 0) {
+                    pct = (foundHosts / totalHosts) * 100;
+                    if (pct > 100) pct = 100;
+                }
+                
+                let colorClass = "bg-red-500";
+                if (pct >= 50) colorClass = "bg-emerald-500";
+                else if (pct >= 10) colorClass = "bg-amber-500";
+
                 let html = `<div class="bg-white rounded-lg shadow-md mb-6 p-6">
                     <h2 class="text-2xl font-bold mb-2 text-slate-800">Network: ${network}</h2>
                     <p class="text-sm text-slate-500 mb-4">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
+                    
+                    <div class="mb-6">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="font-medium text-slate-700">${foundHosts} of ${totalHosts} addresses found</span>
+                            <span class="font-medium text-slate-700">${pct.toFixed(1)}%</span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-2.5">
+                            <div class="${colorClass} h-2.5 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                        </div>
+                    </div>
+                    
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-left text-sm whitespace-nowrap">
                             <thead class="uppercase tracking-wider border-b-2 border-slate-200 bg-slate-50">
