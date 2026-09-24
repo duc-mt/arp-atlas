@@ -36,8 +36,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 });
                 const result = await response.json();
                 if (response.ok) {
-                    alert("Scan completed successfully!");
-                    fetchHistory();
+                    await fetchHistory();
+                    btn.innerText = "Success!";
+                    setTimeout(() => { btn.innerText = "Scan Network"; }, 2000);
                 } else {
                     alert("Error: " + result.message);
                 }
@@ -45,14 +46,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 alert("Failed to trigger scan");
             } finally {
                 btn.disabled = false;
-                btn.innerText = "Scan Network";
                 btn.classList.remove("opacity-50");
+                if (btn.innerText === "Scanning...") {
+                    btn.innerText = "Scan Network";
+                }
             }
         }
 
         async function fetchHistory() {
             try {
-                const response = await fetch('/scan_history.json');
+                const response = await fetch('/scan_history.json?t=' + new Date().getTime());
                 const data = await response.json();
                 renderDashboard(data);
             } catch (error) {
@@ -65,7 +68,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             const container = document.getElementById('content');
             container.innerHTML = '';
             
-            for (const [network, info] of Object.entries(data)) {
+            // Sort networks by timestamp descending (newest first)
+            const sortedEntries = Object.entries(data).sort((a, b) => {
+                return new Date(b[1].timestamp) - new Date(a[1].timestamp);
+            });
+            
+            for (const [network, info] of sortedEntries) {
                 let html = `<div class="bg-white rounded-lg shadow-md mb-6 p-6">
                     <h2 class="text-2xl font-bold mb-2 text-slate-800">Network: ${network}</h2>
                     <p class="text-sm text-slate-500 mb-4">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
@@ -176,7 +184,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-type", "text/html")
             self.end_headers()
             self.wfile.write(DASHBOARD_HTML.encode('utf-8'))
-        elif self.path == '/scan_history.json':
+        elif self.path.startswith('/scan_history.json'):
             if os.path.exists("scan_history.json"):
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
