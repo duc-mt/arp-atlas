@@ -173,6 +173,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             });
             
             let chartIdx = 0;
+            let finalHtml = "";
+            const chartsToInit = [];
+            
             for (const [network, info] of sortedEntries) {
                 chartIdx++;
                 const chartId = `chart-${chartIdx}`;
@@ -200,7 +203,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                                 <div class="${pct >= 50 ? 'bg-emerald-500' : pct >= 10 ? 'bg-amber-500' : 'bg-red-500'} h-2.5 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
                             </div>
                         </div>
-                        <div class="w-48 h-48">
+                        <div class="w-48 h-48 relative">
                             <canvas id="${chartId}"></canvas>
                         </div>
                     </div>
@@ -237,15 +240,23 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 });
                 
                 html += `</tbody></table></div></div>`;
-                container.innerHTML += html;
+                finalHtml += html;
                 
-                // Render Chart.js pie chart
-                new Chart(document.getElementById(chartId), {
+                chartsToInit.push({
+                    id: chartId,
+                    stats: stats
+                });
+            }
+            
+            container.innerHTML = finalHtml;
+            
+            chartsToInit.forEach(c => {
+                new Chart(document.getElementById(c.id), {
                     type: 'pie',
                     data: {
                         labels: ['Responded', 'Other Interface', 'No Response'],
                         datasets: [{
-                            data: [stats.responded, stats.wrong_iface, stats.no_response],
+                            data: [c.stats.responded, c.stats.wrong_iface, c.stats.no_response],
                             backgroundColor: ['#10b981', '#f59e0b', '#e2e8f0']
                         }]
                     },
@@ -257,7 +268,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         }
                     }
                 });
-            }
+            });
         }
         
         window.onload = fetchHistory;
