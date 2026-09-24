@@ -61,6 +61,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         --color-offline: #f2545b;
         --color-unknown: #6b7280;
       }
+      :root.light {
+        --color-bg: #f5f6fa;
+        --color-panel: #ffffff;
+        --color-panel-alt: #f0f2f7;
+        --color-border: #e1e4ec;
+        --color-text: #1b2130;
+        --color-muted: #636b80;
+        --color-accent: #0f8f81;
+        --color-accent-soft: rgba(15, 143, 129, 0.1);
+        --color-healthy: #1e9e6b;
+        --color-degraded: #a8690f;
+        --color-offline: #d6394a;
+        --color-unknown: #6b7280;
+      }
       body {
         background-color: var(--color-bg);
         color: var(--color-text);
@@ -71,7 +85,46 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       *::-webkit-scrollbar-thumb { background-color: var(--color-border); border-radius: 8px; }
     </style>
     <script>
+        function toggleTheme() {
+            const root = document.documentElement;
+            const isLight = root.classList.toggle('light');
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+            updateThemeIcon();
+            updateChartColors();
+        }
+        function applyTheme() {
+            const theme = localStorage.getItem('theme');
+            const root = document.documentElement;
+            if (theme === 'light') {
+                root.classList.add('light');
+            } else if (theme === 'dark') {
+                root.classList.remove('light');
+            } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                root.classList.add('light');
+            }
+        }
+        function updateThemeIcon() {
+            const isLight = document.documentElement.classList.contains('light');
+            const btn = document.getElementById('theme-toggle-btn');
+            if (btn) btn.innerHTML = isLight ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>' : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>';
+        }
+        function updateChartColors() {
+            if (window.currentCharts) {
+                const isLight = document.documentElement.classList.contains('light');
+                const borderColor = isLight ? '#ffffff' : '#121826';
+                const labelColor = isLight ? '#1b2130' : '#e6eaf2';
+                window.currentCharts.forEach(chart => {
+                    chart.data.datasets[0].borderColor = borderColor;
+                    if (chart.options.plugins && chart.options.plugins.legend && chart.options.plugins.legend.labels) {
+                        chart.options.plugins.legend.labels.color = labelColor;
+                    }
+                    chart.update();
+                });
+            }
+        }
+        applyTheme();
         
+
         async function clearHistory() {
             if (!confirm("Are you sure you want to clear all scan history?")) return;
             try {
@@ -402,24 +455,28 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             
             container.innerHTML = finalHtml;
             
+            window.currentCharts = [];
             chartsToInit.forEach(c => {
-                new Chart(document.getElementById(c.id), {
+                const isLight = document.documentElement.classList.contains('light');
+                const borderColor = isLight ? '#ffffff' : '#121826';
+                const chart = new Chart(document.getElementById(c.id), {
                     type: 'pie',
                     data: {
                         labels: ['Responded', 'Other Interface', 'No Response'],
                         datasets: [{
                             data: [c.stats.responded, c.stats.wrong_iface, c.stats.no_response],
-                            backgroundColor: ['#3dd68c', '#f5b94d', '#232b3d'], borderColor: '#121826', borderWidth: 2
+                            backgroundColor: ['#3dd68c', '#f5b94d', '#232b3d'], borderColor: borderColor, borderWidth: 2
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
-                            legend: { position: 'bottom' }
+                            legend: { position: 'bottom', labels: { color: isLight ? '#1b2130' : '#e6eaf2' } }
                         }
                     }
                 });
+                window.currentCharts.push(chart);
             });
         }
         
@@ -445,6 +502,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     <button onclick="triggerScan()" id="scan-btn" class="text-xs px-4 py-1.5 rounded-control bg-accent text-bg hover:opacity-90 font-medium transition-opacity">Scan Network</button>
                     
                     <button onclick="clearHistory()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-offline hover:border-offline transition-colors">Clear</button>
+                    <button id="theme-toggle-btn" onclick="toggleTheme()" class="text-muted hover:text-text focus:outline-none p-1.5 rounded-control border border-transparent hover:border-border transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    </button>
                 </div>
             </div>
         </div>
