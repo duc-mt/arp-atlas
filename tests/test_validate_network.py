@@ -25,7 +25,7 @@ class TestAcceptsValidAddresses:
         assert main.validate_network("192.168.1.0/24") == "192.168.1.0/24"
 
     def test_single_host_without_prefix(self):
-        assert main.validate_network("192.168.1.5") == "192.168.1.5"
+        assert main.validate_network("192.168.1.5") == "192.168.1.5/32"
 
 
 class TestStripsWhitespace:
@@ -43,7 +43,7 @@ class TestAcceptsHostAddressWithPrefix:
     def test_host_bits_set_is_no_longer_rejected(self):
         # Previously raised ValueError("... has host bits set").
         result = main.validate_network("192.168.1.5/24")
-        assert result == "192.168.1.5/24"
+        assert result == "192.168.1.0/24"
 
 
 class TestRejectsInvalidInput:

@@ -15,15 +15,13 @@
 
 
 # ------------------------------- Module Imports ------------------------------
-# Import scapy library
-import scapy.all as scapy
-
 # Import the necessary classes from the rich module
 from rich.console import Console
 from rich.theme import Theme
 
 # Stdlib
 import argparse
+import asyncio
 import collections
 import csv
 import datetime
@@ -83,9 +81,9 @@ def validate_network(network):
     # the intent is unambiguous and scapy's own address expansion
     # already normalises it down to the containing network correctly.
     # strict=False accepts it, matching what actually gets scanned.
-    ipaddress.ip_network(network, strict=False)
+    net = ipaddress.ip_network(network, strict=False)
 
-    return network
+    return str(net)
 
 
 # Define a function to scan a network
@@ -112,6 +110,7 @@ def scan_network(network, timeout=DEFAULT_TIMEOUT):
     list[dict]
         One {"ip": ..., "mac": ...} dict per device that replied.
     """
+    import scapy.all as scapy
     # Create an ARP request packet with the network address
     # ARP is used to map IP addresses to MAC addresses
     # pdst is the parameter for the destination IP address
@@ -167,12 +166,25 @@ def lookup_vendor(mac):
         database (very common for locally-administered/randomised
         MACs, which is expected, not an error).
     """
+    import scapy.all as scapy
     vendor = scapy.conf.manufdb._get_manuf(mac)
     # _get_manuf() echoes the input back unchanged when there's no
     # match, rather than raising or returning None itself.
     if vendor.lower() == mac.lower():
         return None
     return vendor
+
+
+async def _lookup_hostname_async(ip, timeout):
+    loop = asyncio.get_running_loop()
+    try:
+        host, _ = await asyncio.wait_for(
+            loop.getnameinfo((ip, 0), flags=socket.NI_NAMEREQD),
+            timeout=timeout
+        )
+        return host
+    except (asyncio.TimeoutError, socket.gaierror, OSError):
+        return None
 
 
 def lookup_hostname(ip, timeout=0.3):
@@ -183,27 +195,26 @@ def lookup_hostname(ip, timeout=0.3):
     ip : str
         The IP address to resolve.
     timeout : float
-        Seconds to wait before giving up on this one lookup. Kept
-        short and per-lookup (rather than left unbounded) since these
-        run serially, one per discovered device, and most home/guest
-        networks have no PTR records for most hosts at all.
+        Seconds to wait before giving up on this one lookup.
 
     Returns
     -------
     str or None
         The resolved hostname, or None if there's no PTR record, the
-        lookup times out, or DNS is unreachable - all routine outcomes
-        for a reverse lookup, not error conditions worth surfacing.
+        lookup times out, or DNS is unreachable.
     """
-    previous_timeout = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(timeout)
     try:
-        hostname, _aliases, _addresses = socket.gethostbyaddr(ip)
-        return hostname
-    except (socket.herror, socket.gaierror, OSError):
+        return asyncio.run(_lookup_hostname_async(ip, timeout))
+    except RuntimeError:
+        # Fallback if already in an event loop or loop is closed
         return None
-    finally:
-        socket.setdefaulttimeout(previous_timeout)
+
+
+async def _enrich_devices_async(devices):
+    tasks = [_lookup_hostname_async(d["ip"], 0.3) for d in devices]
+    hostnames = await asyncio.gather(*tasks)
+    for d, h in zip(devices, hostnames):
+        d["hostname"] = h
 
 
 def enrich_devices(devices):
@@ -223,7 +234,10 @@ def enrich_devices(devices):
     """
     for device in devices:
         device["vendor"] = lookup_vendor(device["mac"])
-        device["hostname"] = lookup_hostname(device["ip"])
+    
+    if devices:
+        asyncio.run(_enrich_devices_async(devices))
+    
     return devices
 
 
