@@ -12,6 +12,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Network Hunter Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         
         async function clearHistory() {
@@ -29,12 +30,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
         
         async function triggerScan() {
-            const network = document.getElementById('network-input').value;
+            const startIp = document.getElementById('start-ip').value.trim();
+            const endIp = document.getElementById('end-ip').value.trim();
+            const iface = document.getElementById('iface-select').value;
             const scanPorts = document.getElementById('scan-ports').checked;
             const btn = document.getElementById('scan-btn');
             
-            if (!network) {
-                alert("Please enter a network address");
+            if (!startIp || !endIp) {
+                alert("Please enter both a Start and End IPv4 address");
                 return;
             }
             
@@ -46,7 +49,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const response = await fetch('/api/scan', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({network: network, scan_ports: scanPorts})
+                    body: JSON.stringify({start_ip: startIp, end_ip: endIp, iface: iface, scan_ports: scanPorts})
                 });
                 const result = await response.json();
                 if (response.ok) {
@@ -70,29 +73,22 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         window.currentData = null;
         window.currentAvailableIps = [];
         
-        function getAvailableIps(network, foundIps) {
-            const parts = network.split('/');
-            if (parts.length !== 2) return [];
-            const ip = parts[0];
-            const prefix = parseInt(parts[1], 10);
-            if (prefix > 30 || prefix < 8) return [];
+        function getAvailableIps(startIp, endIp, foundIps) {
+            function ipToLong(ip) {
+                return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+            }
+            function longToIp(long) {
+                return `${(long >>> 24) & 255}.${(long >>> 16) & 255}.${(long >>> 8) & 255}.${long & 255}`;
+            }
             
-            const ipParts = ip.split('.').map(Number);
-            let ipLong = ((ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3]) >>> 0;
-            
-            const mask = ~((1 << (32 - prefix)) - 1) >>> 0;
-            const networkLong = (ipLong & mask) >>> 0;
-            const broadcastLong = (networkLong | ~mask) >>> 0;
+            const startLong = ipToLong(startIp);
+            const endLong = ipToLong(endIp);
             
             const available = [];
             const foundSet = new Set(foundIps);
             
-            for (let i = networkLong + 1; i < broadcastLong; i++) {
-                const octet1 = (i >>> 24) & 255;
-                const octet2 = (i >>> 16) & 255;
-                const octet3 = (i >>> 8) & 255;
-                const octet4 = i & 255;
-                const ipStr = `${octet1}.${octet2}.${octet3}.${octet4}`;
+            for (let i = startLong; i <= endLong; i++) {
+                const ipStr = longToIp(i);
                 if (!foundSet.has(ipStr)) {
                     available.push(ipStr);
                 }
@@ -105,14 +101,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             const info = window.currentData[network];
             const foundIps = info.devices.map(d => d.ip);
             
-            const available = getAvailableIps(network, foundIps);
+            // Re-parse start and end IPs from network name "Start-End"
+            const parts = network.split(' on ')[0].split('-');
+            let available = [];
+            if (parts.length === 2) {
+                available = getAvailableIps(parts[0], parts[1], foundIps);
+            }
             window.currentAvailableIps = available;
             
             document.getElementById('available-title').innerText = `Available Addresses (${available.length})`;
-            
             const listEl = document.getElementById('available-list');
             listEl.innerHTML = available.map(ip => `<li>${ip}</li>`).join('');
-            
             document.getElementById('available-modal').classList.remove('hidden');
         }
 
@@ -144,7 +143,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 btn.innerText = "Refreshing...";
                 btn.classList.add("opacity-50");
             }
-            // Clear the dashboard screen immediately for visual feedback
             const container = document.getElementById('content');
             if (container) {
                 container.innerHTML = '<p class="p-4 text-slate-500">Refreshing data...</p>';
@@ -170,30 +168,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             const container = document.getElementById('content');
             container.innerHTML = '';
             
-            // Sort networks by timestamp descending (newest first)
             const sortedEntries = Object.entries(data).sort((a, b) => {
                 return new Date(b[1].timestamp) - new Date(a[1].timestamp);
             });
             
+            let chartIdx = 0;
             for (const [network, info] of sortedEntries) {
-                let totalHosts = 1;
-                if (network.includes('/')) {
-                    const prefix = parseInt(network.split('/')[1], 10);
-                    if (!network.includes(':')) {
-                        const totalIps = Math.pow(2, 32 - prefix);
-                        totalHosts = prefix <= 30 ? totalIps - 2 : totalIps;
-                    }
-                }
+                chartIdx++;
+                const chartId = `chart-${chartIdx}`;
                 const foundHosts = info.devices.length;
-                let pct = 0;
-                if (totalHosts > 0) {
-                    pct = (foundHosts / totalHosts) * 100;
-                    if (pct > 100) pct = 100;
-                }
                 
-                let colorClass = "bg-red-500";
-                if (pct >= 50) colorClass = "bg-emerald-500";
-                else if (pct >= 10) colorClass = "bg-amber-500";
+                let stats = info.stats || { responded: foundHosts, wrong_iface: 0, no_response: 0 };
+                let totalHosts = stats.responded + stats.wrong_iface + stats.no_response;
+                if (totalHosts <= 0) totalHosts = 1;
+                let pct = (stats.responded / totalHosts) * 100;
 
                 let html = `<div class="bg-white rounded-lg shadow-md mb-6 p-6">
                     <div class="flex justify-between items-start mb-2">
@@ -202,13 +190,18 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     </div>
                     <p class="text-sm text-slate-500 mb-4">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
                     
-                    <div class="mb-6">
-                        <div class="flex justify-between text-sm mb-1">
-                            <span class="font-medium text-slate-700">${foundHosts} of ${totalHosts} addresses found</span>
-                            <span class="font-medium text-slate-700">${pct.toFixed(1)}%</span>
+                    <div class="flex flex-col md:flex-row gap-6 mb-6 items-center">
+                        <div class="flex-1 w-full">
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="font-medium text-slate-700">${stats.responded} of ${totalHosts} addresses found</span>
+                                <span class="font-medium text-slate-700">${pct.toFixed(1)}%</span>
+                            </div>
+                            <div class="w-full bg-slate-200 rounded-full h-2.5">
+                                <div class="${pct >= 50 ? 'bg-emerald-500' : pct >= 10 ? 'bg-amber-500' : 'bg-red-500'} h-2.5 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                            </div>
                         </div>
-                        <div class="w-full bg-slate-200 rounded-full h-2.5">
-                            <div class="${colorClass} h-2.5 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                        <div class="w-48 h-48">
+                            <canvas id="${chartId}"></canvas>
                         </div>
                     </div>
                     
@@ -245,6 +238,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 
                 html += `</tbody></table></div></div>`;
                 container.innerHTML += html;
+                
+                // Render Chart.js pie chart
+                new Chart(document.getElementById(chartId), {
+                    type: 'pie',
+                    data: {
+                        labels: ['Responded', 'Other Interface', 'No Response'],
+                        datasets: [{
+                            data: [stats.responded, stats.wrong_iface, stats.no_response],
+                            backgroundColor: ['#10b981', '#f59e0b', '#e2e8f0']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' }
+                        }
+                    }
+                });
             }
         }
         
@@ -259,24 +271,27 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 <div class="flex items-center mb-4 sm:mb-0">
                     <span class="font-bold text-white text-xl">Network Hunter</span>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <input type="text" id="network-input" placeholder="e.g. 192.168.1.0/24" class="px-3 py-2 rounded border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                    <label class="text-white text-sm flex items-center">
+                <div class="flex flex-wrap items-center gap-2">
+                    <select id="iface-select" class="px-3 py-1.5 rounded text-slate-700 bg-white border-0">
+                        <!-- IFACE_OPTIONS -->
+                    </select>
+                    <input type="text" id="start-ip" placeholder="Start: 192.168.1.1" class="px-3 py-1.5 rounded text-slate-700 w-36 border-0 focus:ring-2 focus:ring-indigo-300">
+                    <input type="text" id="end-ip" placeholder="End: 192.168.1.254" class="px-3 py-1.5 rounded text-slate-700 w-36 border-0 focus:ring-2 focus:ring-indigo-300">
+                    <label class="flex items-center text-white text-sm font-medium">
                         <input type="checkbox" id="scan-ports" class="mr-2"> Scan Ports
                     </label>
                     <button onclick="triggerScan()" id="scan-btn" class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Scan Network</button>
                     <button onclick="fetchHistory()" id="refresh-btn" class="bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Refresh</button>
-                    <button onclick="clearHistory()" id="clear-btn" class="bg-red-500 hover:bg-red-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Clear</button>
+                    <button onclick="clearHistory()" class="bg-red-500 hover:bg-red-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Clear</button>
                 </div>
             </div>
         </div>
-
     </nav>
     <main class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8" id="content">
         <p class="p-4 text-slate-500">Loading dashboard...</p>
+    </main>
 
-        </main>
-<!-- Available Addresses Modal -->
+    <!-- Available Addresses Modal -->
     <div id="available-modal" class="fixed inset-0 bg-slate-900 bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
             <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
@@ -294,7 +309,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             </div>
         </div>
     </div>
-
 </body>
 </html>
 """
@@ -347,10 +361,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == '/':
+            import scapy.all as scapy
+            ifaces = scapy.get_working_ifaces()
+            iface_options = ""
+            for iface in ifaces:
+                if iface.ip:
+                    iface_options += f'<option value="{iface.name}">{iface.name} ({iface.ip})</option>'
+            html = DASHBOARD_HTML.replace("<!-- IFACE_OPTIONS -->", iface_options)
+            
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
-            self.wfile.write(DASHBOARD_HTML.encode('utf-8'))
+            self.wfile.write(html.encode('utf-8'))
         elif self.path.startswith('/scan_history.json'):
             if os.path.exists("scan_history.json"):
                 self.send_response(200)
