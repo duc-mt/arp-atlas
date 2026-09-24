@@ -596,17 +596,19 @@ def run_interactive() -> int:
     try:
         devices = scan_network(network)
     except PermissionError:
-        # NOTE: previously unhandled - scanning requires raw-socket
-        # access, which needs root privileges (per the README's own
-        # "run as root" instruction). Without them, scapy.srp() raises
-        # PermissionError, which used to crash with a raw traceback
-        # instead of the same kind of friendly message every other
-        # error in this script gets.
         print_error(
             "Permission denied. This script needs to send raw packets - "
             "try running it with sudo/as root."
         )
         return 1
+    except Exception as e:
+        if type(e).__name__ == "Scapy_Exception" and "Permission" in str(e):
+            print_error(
+                "Permission denied. This script needs to send raw packets - "
+                "try running it with sudo/as root."
+            )
+            return 1
+        raise
 
     conflicts = find_ip_conflicts(devices)
     if conflicts:
