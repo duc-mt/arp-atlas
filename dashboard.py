@@ -275,7 +275,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <main class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8" id="content">
         <p class="p-4 text-slate-500">Loading dashboard...</p>
 
-    <!-- Available Addresses Modal -->
+        </main>
+<!-- Available Addresses Modal -->
     <div id="available-modal" class="fixed inset-0 bg-slate-900 bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
             <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
@@ -294,7 +295,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
     </div>
 
-    </main>
 </body>
 </html>
 """
