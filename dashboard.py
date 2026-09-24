@@ -54,6 +54,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         async function fetchHistory() {
+            const btn = document.getElementById('refresh-btn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = "Refreshing...";
+                btn.classList.add("opacity-50");
+            }
             try {
                 const response = await fetch('/scan_history.json?t=' + new Date().getTime());
                 const data = await response.json();
@@ -61,6 +67,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             } catch (error) {
                 console.error("No history found or error fetching", error);
                 document.getElementById('content').innerHTML = '<p class="text-red-500 p-4">No scan history found. Please run a scan first.</p>';
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove("opacity-50");
+                    setTimeout(() => { btn.innerText = "Refresh"; }, 500);
+                }
             }
         }
 
@@ -130,7 +142,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         <input type="checkbox" id="scan-ports" class="mr-2"> Scan Ports
                     </label>
                     <button onclick="triggerScan()" id="scan-btn" class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Scan Network</button>
-                    <button onclick="fetchHistory()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Refresh</button>
+                    <button onclick="fetchHistory()" id="refresh-btn" class="bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Refresh</button>
                 </div>
             </div>
         </div>
