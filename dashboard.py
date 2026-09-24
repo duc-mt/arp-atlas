@@ -121,13 +121,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
 
         function copyAvailable() {
-            navigator.clipboard.writeText(window.currentAvailableIps.join('\n')).then(() => {
+            navigator.clipboard.writeText(window.currentAvailableIps.join('\\n')).then(() => {
                 alert('Copied ' + window.currentAvailableIps.length + ' addresses to clipboard!');
             });
         }
 
         function exportAvailableCsv() {
-            let csvContent = "data:text/csv;charset=utf-8,IP Address\n" + window.currentAvailableIps.join("\n");
+            let csvContent = "data:text/csv;charset=utf-8,IP Address\\n" + window.currentAvailableIps.join("\\n");
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
             link.setAttribute("href", encodedUri);
