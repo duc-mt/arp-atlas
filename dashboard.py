@@ -13,6 +13,43 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <title>Network Hunter Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+        
+        async function triggerScan() {
+            const network = document.getElementById('network-input').value;
+            const scanPorts = document.getElementById('scan-ports').checked;
+            const btn = document.getElementById('scan-btn');
+            
+            if (!network) {
+                alert("Please enter a network address");
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.innerText = "Scanning...";
+            btn.classList.add("opacity-50");
+            
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({network: network, scan_ports: scanPorts})
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    alert("Scan completed successfully!");
+                    fetchHistory();
+                } else {
+                    alert("Error: " + result.message);
+                }
+            } catch (error) {
+                alert("Failed to trigger scan");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Scan Network";
+                btn.classList.remove("opacity-50");
+            }
+        }
+
         async function fetchHistory() {
             try {
                 const response = await fetch('/scan_history.json');
@@ -73,16 +110,23 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </head>
 <body class="bg-slate-100 min-h-screen font-sans">
     <nav class="bg-indigo-600 shadow-lg">
+        
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center">
+            <div class="flex flex-col sm:flex-row items-center justify-between h-auto sm:h-16 py-4 sm:py-0">
+                <div class="flex items-center mb-4 sm:mb-0">
                     <span class="font-bold text-white text-xl">Network Hunter</span>
                 </div>
-                <div>
-                    <button onclick="fetchHistory()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-2 rounded shadow transition">Refresh</button>
+                <div class="flex items-center space-x-4">
+                    <input type="text" id="network-input" placeholder="e.g. 192.168.1.0/24" class="px-3 py-2 rounded border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <label class="text-white text-sm flex items-center">
+                        <input type="checkbox" id="scan-ports" class="mr-2"> Scan Ports
+                    </label>
+                    <button onclick="triggerScan()" id="scan-btn" class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Scan Network</button>
+                    <button onclick="fetchHistory()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Refresh</button>
                 </div>
             </div>
         </div>
+
     </nav>
     <main class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8" id="content">
         <p class="p-4 text-slate-500">Loading dashboard...</p>
@@ -92,6 +136,40 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 """
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
+    
+    def do_POST(self) -> None:
+        if self.path == '/api/scan':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                network = data.get('network')
+                scan_ports = data.get('scan_ports', False)
+                
+                import main
+                valid_network = main.validate_network(network)
+                devices = main.scan_network(valid_network)
+                main.enrich_devices(devices)
+                
+                if scan_ports:
+                    main.scan_devices_ports(devices)
+                
+                main.save_scan(main.HISTORY_FILE, valid_network, devices)
+                
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "network": valid_network}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(400)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def do_GET(self) -> None:
         if self.path == '/':
             self.send_response(200)
