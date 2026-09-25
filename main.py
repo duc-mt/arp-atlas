@@ -222,7 +222,13 @@ def lookup_hostname(ip: str, timeout: float = 0.3) -> str | None:
 
 
 async def _enrich_devices_async(devices: list[dict[str, Any]]) -> None:
-    tasks = [_lookup_hostname_async(d["ip"], 0.3) for d in devices]
+    sem = asyncio.Semaphore(50)
+    
+    async def _bounded_lookup(ip: str, timeout: float) -> str | None:
+        async with sem:
+            return await _lookup_hostname_async(ip, timeout)
+
+    tasks = [_bounded_lookup(d["ip"], 0.3) for d in devices]
     hostnames = await asyncio.gather(*tasks)
     for d, h in zip(devices, hostnames):
         d["hostname"] = h
