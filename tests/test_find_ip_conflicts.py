@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 """Tests for main.find_ip_conflicts().
 
 Two different MACs both answering for the same IP in one scan is the

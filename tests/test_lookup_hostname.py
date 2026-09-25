@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 """Tests for main.lookup_hostname().
 
 socket.getnameinfo() is always mocked - these tests never perform a
@@ -35,5 +34,9 @@ class TestLookupHostname:
         # directly from the mock doesn't always work if it's called inside run_in_executor.
         # But we can just mock `_lookup_hostname_async` for a pure timeout test,
         # or we can just mock the asyncio wait_for.
-        with mock.patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+        def _mock_wait_for(coro, timeout=None):
+            coro.close()
+            raise asyncio.TimeoutError()
+            
+        with mock.patch("asyncio.wait_for", side_effect=_mock_wait_for):
             assert main.lookup_hostname("192.168.1.50") is None

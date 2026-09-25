@@ -230,7 +230,7 @@ async def _enrich_devices_async(devices: list[dict[str, Any]]) -> None:
 
     tasks = [_bounded_lookup(d["ip"], 0.3) for d in devices]
     hostnames = await asyncio.gather(*tasks)
-    for d, h in zip(devices, hostnames):
+    for d, h in zip(devices, hostnames, strict=False):
         d["hostname"] = h
 
 
@@ -351,13 +351,13 @@ def classify_device(vendor: str | None, open_ports: list[int]) -> str:
         return "windows host"
     if 22 in ports:  # SSH
         return "server"
+    if 9100 in ports:  # raw/JetDirect printing
+        return "printer"
     if any(keyword in vendor_lower for keyword in (
         "cisco", "netgear", "tp-link", "ubiquiti", "asustek", "d-link",
         "mikrotik", "juniper",
     )):
         return "router/switch"
-    if 9100 in ports:  # raw/JetDirect printing
-        return "printer"
     if 80 in ports or 443 in ports:
         return "web-enabled device"
     return "unknown"
@@ -382,10 +382,8 @@ def scan_devices_ports(
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
         futures = {executor.submit(_scan, d): d for d in devices}
-        count = 0
-        for future in concurrent.futures.as_completed(futures):
+        for count, future in enumerate(concurrent.futures.as_completed(futures), start=1):
             device = future.result()
-            count += 1
             if progress_callback:
                 progress_callback(count, len(devices), device)
     return devices
