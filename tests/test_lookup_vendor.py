@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 """Tests for main.lookup_vendor().
 
 Uses scapy's own bundled IEEE manufacturer database, so these are
