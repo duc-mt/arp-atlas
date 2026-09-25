@@ -217,6 +217,36 @@
             return available;
         }
 
+        function formatIpRanges(ipList) {
+            if (!ipList || ipList.length === 0) return [];
+            const sortedLongs = ipList.map(ipToLong).sort((a, b) => a - b);
+            const ranges = [];
+            let rangeStart = sortedLongs[0];
+            let prev = sortedLongs[0];
+            
+            for (let i = 1; i < sortedLongs.length; i++) {
+                const current = sortedLongs[i];
+                if (current === prev + 1) {
+                    prev = current;
+                } else {
+                    if (rangeStart === prev) {
+                        ranges.push(longToIp(rangeStart));
+                    } else {
+                        ranges.push(`${longToIp(rangeStart)} - ${longToIp(prev)}`);
+                    }
+                    rangeStart = current;
+                    prev = current;
+                }
+            }
+            if (rangeStart === prev) {
+                ranges.push(longToIp(rangeStart));
+            } else {
+                ranges.push(`${longToIp(rangeStart)} - ${longToIp(prev)}`);
+            }
+            return ranges;
+        }
+
+
         function downloadCsv(content, filename) {
             const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
@@ -279,11 +309,11 @@
             
             csvContent += "\n--- Available Addresses ---\n";
 
-            csvContent += "IP Address\n";
+            csvContent += "IP Address Range\n";
 
-            available.forEach(ip => {
-                csvContent += `${ip}\n`;
-
+            const formattedRanges = formatIpRanges(available);
+            formattedRanges.forEach(range => {
+                csvContent += `${range}\n`;
             });
             
             downloadCsv(csvContent, `scan_${network.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
@@ -308,7 +338,8 @@
             
             document.getElementById('available-title').innerText = `Available Addresses (${available.length})`;
             const listEl = document.getElementById('available-list');
-            listEl.innerHTML = available.map(ip => `<li>${ip}</li>`).join('');
+            const formattedRanges = formatIpRanges(available);
+            listEl.innerHTML = formattedRanges.map(r => `<li>${r}</li>`).join('');
             document.getElementById('available-modal').classList.remove('hidden');
         }
 
@@ -317,13 +348,15 @@
         }
 
         function copyAvailable() {
-            navigator.clipboard.writeText(window.currentAvailableIps.join('\n')).then(() => {
+            const formattedRanges = formatIpRanges(window.currentAvailableIps);
+            navigator.clipboard.writeText(formattedRanges.join('\n')).then(() => {
                 alert('Copied ' + window.currentAvailableIps.length + ' addresses to clipboard!');
             });
         }
 
         function exportAvailableCsv() {
-            let csvContent = "IP Address\n" + window.currentAvailableIps.join("\n");
+            const formattedRanges = formatIpRanges(window.currentAvailableIps);
+            let csvContent = "IP Address Range\n" + formattedRanges.join("\n");
             downloadCsv(csvContent, "available_ips.csv");
         }
 
