@@ -108,11 +108,11 @@ class TestScanDevicesPorts:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
 
         with mock.patch(
-            "main.scan_device_ports", return_value=[22]
+            "main.scan_device_ports", return_value=[22, 21]
         ):
             result = main.scan_devices_ports(devices)
 
-        assert result[0]["open_ports"] == [22]
+        assert result[0]["open_ports"] == [22, 21]
         assert result[0]["role"] == "server"
 
     def test_uses_vendor_from_the_device_for_classification(self):
