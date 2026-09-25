@@ -1,6 +1,6 @@
-# network-hunter
-[![CI](https://github.com/duc-mt/network-hunter/actions/workflows/ci.yml/badge.svg)](https://github.com/duc-mt/network-hunter/actions/workflows/ci.yml)
-[![Python Versions](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://pypi.org/project/network-hunter/)
+# arp-atlas
+[![CI](https://github.com/duc-mt/arp-atlas/actions/workflows/ci.yml/badge.svg)](https://github.com/duc-mt/arp-atlas/actions/workflows/ci.yml)
+[![Python Versions](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://pypi.org/project/arp-atlas/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
