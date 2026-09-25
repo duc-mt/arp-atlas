@@ -1,4 +1,4 @@
-# Contributing to arp-atlas
+# Contributing to ARP Atlas
 
 Thank you for your interest in contributing!
 
