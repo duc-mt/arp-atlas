@@ -49,7 +49,7 @@ class TestScanNetwork:
             main.scan_network("192.168.1.0/24")
 
         sent_packet = mock_srp.call_args[0][0]
-        assert sent_packet[scapy.ARP].pdst == "192.168.1.0/24"
+        assert sent_packet[scapy.ARP].pdst == "192.168.1.0/24"  # type: ignore[attr-defined]
 
     def test_default_timeout_is_used_when_not_given(self):
         with mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp:

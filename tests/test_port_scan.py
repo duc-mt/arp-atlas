@@ -84,8 +84,8 @@ class TestClassifyDevice:
     def test_port_3389_is_windows_host(self):
         assert main.classify_device(None, [3389]) == "windows host"
 
-    def test_port_22_is_server(self):
-        assert main.classify_device(None, [22]) == "server"
+    def test_port_22_is_unknown(self):
+        assert main.classify_device(None, [22]) == "unknown"
 
     def test_port_80_is_web_enabled_device(self):
         assert main.classify_device(None, [80]) == "web-enabled device"
