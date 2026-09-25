@@ -347,17 +347,17 @@ def classify_device(vendor: str | None, open_ports: list[int]) -> str:
     vendor_lower = (vendor or "").lower()
     ports = set(open_ports or [])
 
-    if 9100 in ports:  # raw/JetDirect printing
-        return "printer"
+    if 3389 in ports:  # RDP
+        return "windows host"
+    if 22 in ports:  # SSH
+        return "server"
     if any(keyword in vendor_lower for keyword in (
         "cisco", "netgear", "tp-link", "ubiquiti", "asustek", "d-link",
         "mikrotik", "juniper",
     )):
         return "router/switch"
-    if 3389 in ports:  # RDP
-        return "windows host"
-    if 22 in ports:  # SSH
-        return "server"
+    if 9100 in ports:  # raw/JetDirect printing
+        return "printer"
     if 80 in ports or 443 in ports:
         return "web-enabled device"
     return "unknown"
