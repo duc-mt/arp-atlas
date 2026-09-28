@@ -28,3 +28,6 @@ ignore_missing_imports = true
 warn_return_any = true
 warn_unused_configs = true
 check_untyped_defs = true
+explicit_package_bases = true
+# Exclude legacy root-level shims and old tests/ folder (migrated to backend/tests + cli/tests)
+exclude = ["^tests/", "^main\\.py$", "^dashboard\\.py$"]
