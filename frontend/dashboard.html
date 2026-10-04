@@ -456,6 +456,7 @@
                             <tbody>`;
                 
                 info.devices.forEach(device => {
+                    const isGateway = device.is_gateway ? '<span class="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-500 border border-sky-500/30" title="Default Gateway">GW</span>' : '';
                     const isRandom = device.is_randomized ? '<span class="ml-1.5 inline-flex items-center rounded-full bg-panel-alt text-muted text-[10px] px-2 py-0.5 border border-border font-mono">Random</span>' : '';
                     const vendor = device.vendor || '-';
                     const hostname = device.hostname || '-';
@@ -465,8 +466,10 @@
                         ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-panel-alt text-accent border border-border/80">${role}</span>`
                         : '<span class="text-muted text-xs">-</span>';
                     
-                    html += `<tr class="border-b border-border last:border-0 hover:bg-panel-alt/50 transition-colors">
-                        <td class="py-2.5 pr-3 font-mono text-xs font-semibold text-text">${device.ip}</td>
+                    const rowClass = device.is_gateway ? 'bg-sky-500/5 hover:bg-sky-500/10 border-b border-border transition-colors' : 'border-b border-border last:border-0 hover:bg-panel-alt/50 transition-colors';
+                    
+                    html += `<tr class="${rowClass}">
+                        <td class="py-2.5 pr-3 font-mono text-xs font-semibold ${device.is_gateway ? 'text-accent' : 'text-text'}">${device.ip} ${isGateway}</td>
                         <td class="py-2.5 pr-3 font-mono text-xs text-text">${device.mac} ${isRandom}</td>
                         <td class="py-2.5 pr-3 text-xs text-muted">${vendor}</td>
                         <td class="py-2.5 pr-3 text-xs text-muted font-mono">${hostname}</td>
