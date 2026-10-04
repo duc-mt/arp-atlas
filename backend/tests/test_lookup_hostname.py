@@ -35,7 +35,10 @@ class TestLookupHostname:
         # But we can just mock `_lookup_hostname_async` for a pure timeout test,
         # or we can just mock the asyncio wait_for.
         def _mock_wait_for(coro, timeout=None):
-            coro.close()
+            if hasattr(coro, "close"):
+                coro.close()
+            elif hasattr(coro, "cancel"):
+                coro.cancel()
             raise asyncio.TimeoutError()
             
         with mock.patch("asyncio.wait_for", side_effect=_mock_wait_for):
