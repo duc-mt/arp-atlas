@@ -48,9 +48,9 @@ def _parse_target(target_input: str) -> tuple[list[str], str]:
     import ipaddress
 
     if "-" in target_input:
-        start_ip, end_ip = target_input.split("-", 1)
+        start_ip, end_ip_str = target_input.split("-", 1)
         start_obj = ipaddress.IPv4Address(start_ip.strip())
-        end_obj = ipaddress.IPv4Address(end_obj.strip())
+        end_obj = ipaddress.IPv4Address(end_ip_str.strip())
         if start_obj > end_obj:
             start_obj, end_obj = end_obj, start_obj
         target_ips = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)]
