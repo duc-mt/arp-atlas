@@ -10,8 +10,29 @@ from pathlib import Path
 from typing import Any
 
 # Load dashboard HTML relative to this file (frontend/dashboard.html)
-_FRONTEND_DIR = Path(__file__).resolve().parents[4] / "frontend"
+_FRONTEND_DIR = Path(__file__).resolve().parents[3] / "frontend"
 _DASHBOARD_HTML_PATH = _FRONTEND_DIR / "dashboard.html"
+
+import subprocess
+import re
+import socket
+import struct
+
+def _get_netmask(iface_name: str) -> int:
+    try:
+        out = subprocess.check_output(["ifconfig", iface_name]).decode()
+        match_hex = re.search(r"netmask\s+(0x[0-9a-fA-F]+)", out)
+        if match_hex:
+            return bin(int(match_hex.group(1), 16)).count("1")
+        match_dec = re.search(r"(?:netmask|Mask:)\s*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", out, re.IGNORECASE)
+        if match_dec:
+            mask_str = match_dec.group(1)
+            mask_int = struct.unpack("!I", socket.inet_aton(mask_str))[0]
+            return bin(mask_int).count("1")
+    except Exception:
+        pass
+    return 24
+
 
 with open(_DASHBOARD_HTML_PATH, encoding="utf-8") as _f:
     DASHBOARD_HTML = _f.read()
@@ -76,6 +97,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             iface = data.get("iface")
             scan_ports = data.get("scan_ports", False)
 
+            if not target_input and iface:
+                for ifc in scapy.get_working_ifaces():
+                    if ifc.name == iface and ifc.ip and ifc.ip != "127.0.0.1":
+                        mask = _get_netmask(ifc.name)
+                        target_input = f"{ifc.ip}/{mask}"
+                        break
+            if not target_input:
+                raise ValueError("No target provided and no interface selected to infer subnet.")
+
             target_ips, network_str = _parse_target(target_input)
             if iface:
                 network_str += f" on {iface}"
@@ -139,10 +169,37 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         import scapy.all as scapy  # type: ignore[import-untyped]
 
         ifaces = scapy.get_working_ifaces()
-        iface_options = ""
+        valid_ifaces = []
         for iface in ifaces:
+            # Exclude loopback interfaces
+            if iface.name.startswith("lo"):
+                continue
+            if iface.ip and iface.ip != "127.0.0.1":
+                valid_ifaces.append(iface)
+
+        # Sort: eth/en over wlan/wl
+        def iface_priority(ifc: Any) -> int:
+            name = ifc.name.lower()
+            if name.startswith(("en", "eth")):
+                return 0
+            if name.startswith(("wl", "wlan")):
+        valid_ifaces.sort(key=iface_priority)
+
+        iface_options = ""
+        import ipaddress
+        for i, iface in enumerate(valid_ifaces):
+            selected = ' selected="selected"' if i == 0 else ""
+            subnet_str = ""
             if iface.ip:
-                iface_options += f'<option value="{iface.name}">{iface.name} ({iface.ip})</option>'
+                mask = _get_netmask(iface.name)
+                try:
+                    net = ipaddress.ip_network(f"{iface.ip}/{mask}", strict=False)
+                    subnet_str = str(net)
+                except Exception:
+                    subnet_str = f"{iface.ip}/{mask}"
+            iface_options += (
+                f'<option value="{iface.name}" data-subnet="{subnet_str}"{selected}>{iface.name} ({iface.ip})</option>'
+            )
 
         html = DASHBOARD_HTML.replace("<!-- IFACE_OPTIONS -->", iface_options)
         body = html.encode("utf-8")

@@ -46,7 +46,7 @@
         --color-bg: #020617;
         --color-panel: #0f172a;
         --color-panel-alt: #1e293b;
-        --color-border: #334155;
+        --color-border: #1e293b;
         --color-text: #f1f5f9;
         --color-muted: #94a3b8;
         --color-accent: #38bdf8;
@@ -106,8 +106,8 @@
         function updateChartColors() {
             if (window.currentCharts) {
                 const isLight = document.documentElement.classList.contains('light');
-                const borderColor = isLight ? '#ffffff' : '#121826';
-                const labelColor = isLight ? '#1b2130' : '#e6eaf2';
+                const borderColor = isLight ? '#f1f5f9' : '#0f172a';
+                const labelColor = isLight ? '#1e293b' : '#f1f5f9';
                 window.currentCharts.forEach(chart => {
                     chart.data.datasets[0].borderColor = borderColor;
                     if (chart.options.plugins && chart.options.plugins.legend && chart.options.plugins.legend.labels) {
@@ -139,11 +139,6 @@
             const iface = document.getElementById('iface-select').value;
             const scanPorts = document.getElementById('scan-ports').checked;
             const btn = document.getElementById('scan-btn');
-            
-            if (!target) {
-                alert("Please enter a target (CIDR or IP-IP range)");
-                return;
-            }
             
             btn.disabled = true;
             btn.innerText = "Scanning...";
@@ -416,27 +411,32 @@
                 const isWarning = pct >= 10 && pct < 50;
                 const barColor = isHealthy ? 'bg-healthy' : (isWarning ? 'bg-degraded' : 'bg-offline');
                 
-                let html = `<div class="bg-panel rounded-card border border-border mb-4 p-4">
-                    <div class="flex justify-between items-start mb-3">
-                        <h3 class="text-sm font-medium text-text">Network: ${network}</h3>
+                let html = `<div class="bg-panel rounded-card border border-border mb-6 p-5 shadow-sm transition-all hover:border-slate-700/60">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full ${isHealthy ? 'bg-healthy' : (isWarning ? 'bg-degraded' : 'bg-offline')} animate-pulse"></span>
+                                <h3 class="text-sm font-bold text-text font-mono tracking-tight">${network}</h3>
+                            </div>
+                            <p class="text-[11px] text-muted mt-0.5">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
+                        </div>
                         <div class="flex space-x-2">
-                            <button onclick="exportScanCsv('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Export CSV</button>
-                            <button onclick="showAvailableAddresses('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Available Addresses</button>
+                            <button onclick="exportScanCsv('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-all hover:-translate-y-0.5">Export CSV</button>
+                            <button onclick="showAvailableAddresses('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-all hover:-translate-y-0.5">Available Addresses</button>
                         </div>
                     </div>
-                    <p class="text-xs text-muted mb-4">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
                     
-                    <div class="flex flex-col md:flex-row gap-6 mb-6 items-center">
+                    <div class="flex flex-col md:flex-row gap-6 mb-6 items-center bg-panel-alt/40 p-4 rounded-card border border-border/50">
                         <div class="flex-1 w-full">
-                            <div class="flex justify-between text-xs mb-1.5">
-                                <span class="font-medium text-muted uppercase tracking-wide">${stats.responded} of ${totalHosts} addresses found</span>
-                                <span class="font-mono font-semibold tabular-nums text-text">${pct.toFixed(1)}%</span>
+                            <div class="flex justify-between text-xs mb-2">
+                                <span class="font-medium text-muted uppercase tracking-wider text-[11px]">${stats.responded} of ${totalHosts} addresses found</span>
+                                <span class="font-mono font-bold tabular-nums text-text">${pct.toFixed(1)}%</span>
                             </div>
-                            <div class="w-full bg-panel-alt rounded-full h-1.5">
-                                <div class="${barColor} h-1.5 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                            <div class="w-full bg-panel-alt rounded-full h-2 overflow-hidden">
+                                <div class="${barColor} h-2 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
                             </div>
                         </div>
-                        <div class="w-40 h-40 relative">
+                        <div class="w-36 h-36 relative flex-shrink-0">
                             <canvas id="${chartId}"></canvas>
                         </div>
                     </div>
@@ -444,31 +444,34 @@
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
                             <thead>
-                                <tr class="text-left text-xs text-muted uppercase tracking-wide border-b border-border">
-                                    <th class="py-2 pr-3 font-medium">IP Address</th>
-                                    <th class="py-2 pr-3 font-medium">MAC Address</th>
-                                    <th class="py-2 pr-3 font-medium">Vendor</th>
-                                    <th class="py-2 pr-3 font-medium">Hostname</th>
-                                    <th class="py-2 pr-3 font-medium">Ports</th>
-                                    <th class="py-2 pr-3 font-medium">Role</th>
+                                <tr class="text-left text-[11px] text-muted uppercase tracking-widest font-semibold border-b border-border">
+                                    <th class="py-2.5 pr-3">IP Address</th>
+                                    <th class="py-2.5 pr-3">MAC Address</th>
+                                    <th class="py-2.5 pr-3">Vendor</th>
+                                    <th class="py-2.5 pr-3">Hostname</th>
+                                    <th class="py-2.5 pr-3">Ports</th>
+                                    <th class="py-2.5 pr-3">Role</th>
                                 </tr>
                             </thead>
                             <tbody>`;
                 
                 info.devices.forEach(device => {
-                    const isRandom = device.is_randomized ? '<span class="ml-2 inline-flex items-center rounded-full bg-panel-alt text-muted text-[11px] px-2 py-0.5 border border-border">Random</span>' : '';
+                    const isRandom = device.is_randomized ? '<span class="ml-1.5 inline-flex items-center rounded-full bg-panel-alt text-muted text-[10px] px-2 py-0.5 border border-border font-mono">Random</span>' : '';
                     const vendor = device.vendor || '-';
                     const hostname = device.hostname || '-';
                     const ports = (device.open_ports || []).join(', ') || '-';
                     const role = device.role || '-';
+                    const roleBadge = role !== '-' 
+                        ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-panel-alt text-accent border border-border/80">${role}</span>`
+                        : '<span class="text-muted text-xs">-</span>';
                     
-                    html += `<tr class="border-b border-border last:border-0 hover:bg-panel-alt transition-colors">
-                        <td class="py-2.5 pr-3 font-mono text-xs text-text">${device.ip}</td>
+                    html += `<tr class="border-b border-border last:border-0 hover:bg-panel-alt/50 transition-colors">
+                        <td class="py-2.5 pr-3 font-mono text-xs font-semibold text-text">${device.ip}</td>
                         <td class="py-2.5 pr-3 font-mono text-xs text-text">${device.mac} ${isRandom}</td>
                         <td class="py-2.5 pr-3 text-xs text-muted">${vendor}</td>
-                        <td class="py-2.5 pr-3 text-xs text-muted">${hostname}</td>
+                        <td class="py-2.5 pr-3 text-xs text-muted font-mono">${hostname}</td>
                         <td class="py-2.5 pr-3 font-mono text-xs text-muted">${ports}</td>
-                        <td class="py-2.5 pr-3 text-xs text-muted capitalize">${role}</td>
+                        <td class="py-2.5 pr-3">${roleBadge}</td>
                     </tr>`;
                 });
                 
@@ -507,28 +510,47 @@
                 window.currentCharts.push(chart);
             });
         }
+        function updatePlaceholder() {
+            const select = document.getElementById('iface-select');
+            const selectedOption = select.options[select.selectedIndex];
+            if (selectedOption) {
+                const subnet = selectedOption.getAttribute('data-subnet');
+                document.getElementById('scan-target').placeholder = subnet ? subnet : "Enter target IP or range";
+            }
+        }
         
-        window.onload = fetchHistory;
+        window.onload = function() {
+            fetchHistory();
+            const select = document.getElementById('iface-select');
+            if (select) {
+                updatePlaceholder();
+                select.addEventListener('change', updatePlaceholder);
+            }
+        };
     </script>
 </head>
-<body class="bg-bg min-h-screen font-sans">
+<body class="bg-bg min-h-screen font-sans antialiased">
     <a href="#content" class="sr-only focus:not-sr-only focus:absolute focus:p-4 focus:bg-panel focus:text-accent z-50">Skip to main content</a>
-    <nav class="bg-panel border-b border-border shadow-sm">
-        
+    <nav class="sticky top-0 z-40 backdrop-blur-md bg-panel/85 border-b border-border shadow-sm transition-colors">
         <div class="max-w-[1200px] mx-auto px-6">
-            <div class="flex flex-col sm:flex-row items-center justify-between h-auto sm:h-16 py-4 sm:py-0">
-                <div class="flex items-center mb-4 sm:mb-0">
-                    <span class="font-semibold text-text text-lg tracking-tight">ARP Atlas</span>
+            <div class="flex flex-col sm:flex-row items-center justify-between h-auto sm:h-16 py-3 sm:py-0 gap-3">
+                <div class="flex items-center gap-2.5">
+                    <span class="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </span>
+                    <span class="font-extrabold text-text text-base tracking-tight">ARP Atlas</span>
                 </div>
-                <div class="flex flex-wrap items-center gap-3">
-                    <select id="iface-select" aria-label="Network Interface" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text focus:outline-none focus:border-accent">
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <select id="iface-select" aria-label="Network Interface" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text font-mono focus:outline-none focus:border-accent transition-colors">
                         <!-- IFACE_OPTIONS -->
                     </select>
-                    <input type="text" id="scan-target" aria-label="Target network" placeholder="192.168.1.0/24 or 10.0.0.1-10.0.0.50" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text focus:outline-none focus:border-accent w-64 placeholder-muted">
-                    <label class="flex items-center text-text text-xs font-medium cursor-pointer">
-                        <input type="checkbox" id="scan-ports" class="mr-1.5 accent-accent"> Scan Ports
+                    <input type="text" id="scan-target" aria-label="Target network" placeholder="Leave empty for current subnet" class="text-xs px-3 py-1.5 rounded-control bg-panel-alt border border-border text-text font-mono focus:outline-none focus:border-accent w-64 placeholder-muted transition-colors">
+                    <label class="flex items-center text-text text-xs font-medium cursor-pointer select-none">
+                        <input type="checkbox" id="scan-ports" class="mr-1.5 accent-sky-500 rounded"> Scan Ports
                     </label>
-                    <button onclick="triggerScan()" id="scan-btn" class="text-xs px-4 py-1.5 rounded-control bg-accent text-bg hover:opacity-90 font-medium transition-opacity">Scan Network</button>
+                    <button onclick="triggerScan()" id="scan-btn" class="text-xs px-4 py-1.5 rounded-control bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-medium shadow-sm transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:translate-y-0">Scan Network</button>
                     
                     <button onclick="clearHistory()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-offline hover:border-offline transition-colors">Clear</button>
                     <button id="theme-toggle-btn" aria-label="Toggle theme" onclick="toggleTheme()" class="text-muted hover:text-text focus:outline-none p-1.5 rounded-control border border-transparent hover:border-border transition-colors">
@@ -538,7 +560,7 @@
             </div>
         </div>
     </nav>
-    <main class="max-w-[1200px] mx-auto px-6 py-6" id="content">
+    <main class="max-w-[1200px] mx-auto px-6 py-8" id="content">
         <p class="p-4 text-muted text-sm">Loading dashboard...</p>
     </main>
 
@@ -555,8 +577,8 @@
                 <ul id="available-list" class="space-y-1 font-mono text-xs text-muted"></ul>
             </div>
             <div class="p-4 border-t border-border bg-panel flex justify-end space-x-3 rounded-b-card">
-                <button onclick="copyAvailable()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Copy</button>
-                <button onclick="exportAvailableCsv()" class="text-xs px-4 py-1.5 rounded-control bg-accent text-bg hover:opacity-90 font-medium transition-opacity">Export CSV</button>
+                <button onclick="copyAvailable()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-all hover:-translate-y-0.5">Copy</button>
+                <button onclick="exportAvailableCsv()" class="text-xs px-4 py-1.5 rounded-control bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-medium shadow-sm transition-all hover:-translate-y-0.5 active:translate-y-0">Export CSV</button>
             </div>
         </div>
     </dialog>
