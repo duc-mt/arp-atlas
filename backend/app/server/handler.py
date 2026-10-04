@@ -183,6 +183,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if name.startswith(("en", "eth")):
                 return 0
             if name.startswith(("wl", "wlan")):
+                return 1
+            return 2
+
         valid_ifaces.sort(key=iface_priority)
 
         iface_options = ""
