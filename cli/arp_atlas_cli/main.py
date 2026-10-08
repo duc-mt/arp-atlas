@@ -27,6 +27,35 @@ from cli.arp_atlas_cli.formatters import (
 )
 
 
+def _is_permission_error(exc: Exception) -> bool:
+    """True for a raw PermissionError, or for scapy's own
+    Scapy_Exception when it's wrapping a permission failure - which is
+    what scapy.srp() raises on some platforms instead of a plain
+    PermissionError when raw-socket access is denied.
+    """
+    if isinstance(exc, PermissionError):
+        return True
+    return type(exc).__name__ == "Scapy_Exception" and "Permission" in str(exc)
+
+
+def _scan_or_none(network: str, **kwargs: Any) -> list[dict[str, Any]] | None:
+    """Run scan_network(), printing a friendly message and returning
+    None on a permission failure instead of letting a raw traceback
+    escape - shared by both the interactive and non-interactive paths
+    so a fix to one can't silently miss the other.
+    """
+    try:
+        return scan_network(network, **kwargs)
+    except Exception as e:
+        if _is_permission_error(e):
+            print_error(
+                "Permission denied. This script needs to send raw packets - "
+                "try running it with sudo/as root."
+            )
+            return None
+        raise
+
+
 def check_npcap_on_windows() -> None:
     """On Windows, abort early if Npcap is not installed."""
     if sys.platform == "win32":
@@ -128,22 +157,9 @@ def run_interactive() -> int:
         )
         return 1
 
-    try:
-        devices = scan_network(network)
-    except PermissionError:
-        print_error(
-            "Permission denied. This script needs to send raw packets - "
-            "try running it with sudo/as root."
-        )
+    devices = _scan_or_none(network)
+    if devices is None:
         return 1
-    except Exception as e:
-        if type(e).__name__ == "Scapy_Exception" and "Permission" in str(e):
-            print_error(
-                "Permission denied. This script needs to send raw packets - "
-                "try running it with sudo/as root."
-            )
-            return 1
-        raise
 
     conflicts = find_ip_conflicts(devices)
     if conflicts:
@@ -187,13 +203,8 @@ def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     except ValueError:
         parser.error(f"{args.network!r} is not a valid network address")
 
-    try:
-        devices: list[dict[str, Any]] = scan_network(network, timeout=args.timeout)
-    except PermissionError:
-        print_error(
-            "Permission denied. This script needs to send raw packets - "
-            "try running it with sudo/as root."
-        )
+    devices = _scan_or_none(network, timeout=args.timeout)
+    if devices is None:
         return 1
 
     conflicts = find_ip_conflicts(devices)
