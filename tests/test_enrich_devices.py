@@ -15,7 +15,7 @@ class TestEnrichDevices:
         with mock.patch(
             "main.lookup_vendor", side_effect=["Vendor A", None]
         ), mock.patch(
-            "main.lookup_hostname", side_effect=[None, "host-b.local"]
+            "main._lookup_hostname_async", side_effect=[None, "host-b.local"]
         ):
             result = main.enrich_devices(devices)
 
@@ -28,7 +28,7 @@ class TestEnrichDevices:
         devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
 
         with mock.patch("main.lookup_vendor", return_value=None), \
-             mock.patch("main.lookup_hostname", return_value=None):
+             mock.patch("main._lookup_hostname_async", return_value=None):
             result = main.enrich_devices(devices)
 
         assert result is devices

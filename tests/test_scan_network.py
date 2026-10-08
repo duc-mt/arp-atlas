@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest import mock
 
+import scapy.all as scapy
 import main
 
 
@@ -28,7 +29,7 @@ class TestScanNetwork:
             fake_answered_packet("192.168.1.1", "9c:5a:6b:1e:4f:0c"),
             fake_answered_packet("192.168.1.2", "4a:7c:9f:3b:2d:8e"),
         ]
-        with mock.patch("main.scapy.srp", return_value=(answered, [])):
+        with mock.patch("scapy.all.srp", return_value=(answered, [])):
             devices = main.scan_network("192.168.1.0/24")
 
         assert devices == [
@@ -37,20 +38,20 @@ class TestScanNetwork:
         ]
 
     def test_no_answered_packets_returns_empty_list(self):
-        with mock.patch("main.scapy.srp", return_value=([], [])):
+        with mock.patch("scapy.all.srp", return_value=([], [])):
             devices = main.scan_network("192.168.1.0/24")
 
         assert devices == []
 
     def test_passes_the_network_through_to_the_arp_request(self):
-        with mock.patch("main.scapy.srp", return_value=([], [])) as mock_srp:
+        with mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp:
             main.scan_network("192.168.1.0/24")
 
         sent_packet = mock_srp.call_args[0][0]
-        assert sent_packet[main.scapy.ARP].pdst == "192.168.1.0/24"
+        assert sent_packet[scapy.ARP].pdst == "192.168.1.0/24"
 
     def test_default_timeout_is_used_when_not_given(self):
-        with mock.patch("main.scapy.srp", return_value=([], [])) as mock_srp:
+        with mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp:
             main.scan_network("192.168.1.0/24")
 
         assert mock_srp.call_args.kwargs["timeout"] == main.DEFAULT_TIMEOUT
@@ -59,7 +60,7 @@ class TestScanNetwork:
         """Regression test: the timeout used to be hardcoded to 1
         second regardless of the network's size - a /16 got the same
         window as a /24 and would systematically under-report."""
-        with mock.patch("main.scapy.srp", return_value=([], [])) as mock_srp:
+        with mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp:
             main.scan_network("192.168.1.0/24", timeout=5.0)
 
         assert mock_srp.call_args.kwargs["timeout"] == 5.0
