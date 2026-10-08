@@ -7,6 +7,24 @@ import json
 import os
 from typing import Any
 
+# Exported fields (vendor, hostname in particular) are sourced from the
+# network itself - e.g. a device's DHCP hostname - and are untrusted. A
+# cell value starting with one of these characters is interpreted as a
+# formula by Excel/LibreOffice/Google Sheets when the CSV is opened,
+# which can be used to run arbitrary formulas (including ones that call
+# out to external resources) on whoever opens the export. This is the
+# well-known "CSV injection"/"formula injection" class of bug. Prefixing
+# the value with a single quote neutralises it while keeping the value
+# readable - spreadsheet apps treat a leading apostrophe as "force text"
+# and don't display it.
+_FORMULA_TRIGGER_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: Any) -> Any:
+    if isinstance(value, str) and value[:1] in _FORMULA_TRIGGER_CHARS:
+        return "'" + value
+    return value
+
 
 def export_devices(
     devices: list[dict[str, Any]],
@@ -57,7 +75,10 @@ def export_devices(
                 row = dict(device)
                 if isinstance(row.get("open_ports"), list):
                     row["open_ports"] = ";".join(str(port) for port in row["open_ports"])
+                row = {key: _csv_safe(value) for key, value in row.items()}
                 writer.writerow(row)
-    else:  # json
+    elif fmt == "json":
         with open(path, "w") as f:
             json.dump(devices, f, indent=2)
+    else:
+        raise ValueError(f"unsupported export format {fmt!r} - use 'csv' or 'json'")

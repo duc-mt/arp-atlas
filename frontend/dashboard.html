@@ -180,6 +180,16 @@
             }[c]));
         }
 
+        // A CSV cell starting with =, +, -, @ (or a leading tab/CR) is read
+        // as a formula by Excel/LibreOffice/Sheets when the export is
+        // opened. Device fields are untrusted (network-sourced), so prefix
+        // a leading apostrophe to force text and neutralise it - mirrors
+        // _csv_safe() in backend/app/services/export_service.py.
+        function csvSafe(value) {
+            const str = String(value ?? '');
+            return /^[=+\-@\t\r]/.test(str) ? "'" + str : str;
+        }
+
         function ipToLong(ip) {
             return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
         }
@@ -287,7 +297,7 @@
             
             let csvContent = "--- Scan Summary ---\n";
 
-            csvContent += `Network,${network}\n`;
+            csvContent += `Network,${csvSafe(network)}\n`;
 
             csvContent += `Addresses Found,${stats.responded}\n`;
 
@@ -302,12 +312,12 @@
 
             
             info.devices.forEach(device => {
-                const ip = device.ip || '';
-                const mac = device.mac || '';
-                const vendor = '"' + (device.vendor || '-').replace(/"/g, '""') + '"';
-                const hostname = '"' + (device.hostname || '-').replace(/"/g, '""') + '"';
-                const ports = '"' + (device.open_ports ? device.open_ports.join(', ') : '-') + '"';
-                const role = device.role || '-';
+                const ip = csvSafe(device.ip || '');
+                const mac = csvSafe(device.mac || '');
+                const vendor = '"' + csvSafe(device.vendor || '-').replace(/"/g, '""') + '"';
+                const hostname = '"' + csvSafe(device.hostname || '-').replace(/"/g, '""') + '"';
+                const ports = '"' + csvSafe(device.open_ports ? device.open_ports.join(', ') : '-') + '"';
+                const role = csvSafe(device.role || '-');
                 csvContent += `${ip},${mac},${vendor},${hostname},${ports},${role}\n`;
 
             });
