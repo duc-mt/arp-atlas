@@ -4,7 +4,7 @@
 # =============================================================================
 #
 #        FILE:  main.py
-#      AUTHOR:  Henry Mai <ducmai.network@gmail.com>
+#      AUTHOR:  Mai Tan Duc <ducmai.network@gmail.com>
 #       USAGE:  sudo python3 main.py
 #               and identify the IP addresses and MAC addresses
 #               of all connected devices.
@@ -27,9 +27,31 @@ from rich.console import Console
 from rich.theme import Theme
 
 # Stdlib
+import argparse
 import collections
+import csv
+import datetime
 import ipaddress
+import json
+import os
 import socket
+
+
+# ------------------------------- Named Constant -------------------------------
+DEFAULT_TIMEOUT = 1.0
+
+# Where scan results are persisted, keyed by the exact network string
+# that was scanned, so a later scan of the same network can report
+# what changed. A module-level constant (rather than hardcoding the
+# path in each function) so tests can point it at a scratch file
+# instead of the real one, and the CLI's --history-file can override
+# it.
+HISTORY_FILE = 'scan_history.json'
+
+# A small, fixed set of well-known ports probed by scan_device_ports()
+# when port scanning is opted into - not a general-purpose port
+# scanner, just enough to make a reasonable guess at a device's role.
+COMMON_PORTS = [22, 80, 443, 3389, 9100]
 
 
 # ---------------------------- Function Definitions ---------------------------
@@ -71,7 +93,29 @@ def validate_network(network):
 
 
 # Define a function to scan a network
-def scan_network(network):
+def scan_network(network, timeout=DEFAULT_TIMEOUT):
+    """Send an ARP broadcast to `network` and collect the replies.
+
+    Parameters
+    ----------
+    network : str
+        The network/address to scan, e.g. "192.168.1.0/24".
+    timeout : float
+        Seconds to wait for ARP replies.
+
+        NOTE: this used to be hardcoded to 1 second regardless of the
+        network's size - flagged in this project's own architecture
+        review as a real gap: a /16 gets the same window as a /24 and
+        will systematically under-report, since scapy.srp()'s timeout
+        is a single wait covering the *entire* sweep, not a per-host
+        retry budget. Exposing it lets a larger scan be given more
+        time.
+
+    Returns
+    -------
+    list[dict]
+        One {"ip": ..., "mac": ...} dict per device that replied.
+    """
     # Create an ARP request packet with the network address
     # ARP is used to map IP addresses to MAC addresses
     # pdst is the parameter for the destination IP address
@@ -88,7 +132,9 @@ def scan_network(network):
     # srp is a function from scapy that sends and receives packets at layer 2
     # timeout is the parameter for how long to wait for a response
     # verbose is the parameter for whether to print the details of the packets
-    answered, unanswered = scapy.srp(arp_broadcast, timeout=1, verbose=False)
+    answered, unanswered = scapy.srp(
+        arp_broadcast, timeout=timeout, verbose=False
+    )
     # Create a list to store the IP and MAC addresses
     devices = []
     # Loop through the answered packets
@@ -215,28 +261,269 @@ def find_ip_conflicts(devices):
     }
 
 
+def scan_device_ports(ip, ports=COMMON_PORTS, timeout=0.3):
+    """Attempt a TCP connect to each port in `ports` and return the
+    ones that accepted a connection.
+
+    A lightweight, best-effort probe of a small, fixed set of
+    well-known ports - not a general-purpose port scanner. Each
+    connection attempt is short and closed immediately, but with
+    `len(ports)` attempts per device at up to `timeout` seconds each,
+    this is still real added latency per device - which is exactly why
+    it's opt-in (see scan_devices_ports()) rather than run by default.
+
+    Parameters
+    ----------
+    ip : str
+        The IP address to probe.
+    ports : list[int]
+        Which ports to try.
+    timeout : float
+        Seconds to wait for each connection attempt.
+
+    Returns
+    -------
+    list[int]
+        The subset of `ports` that accepted a connection, in the
+        order they were probed.
+    """
+    open_ports = []
+    for port in ports:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            try:
+                if sock.connect_ex((ip, port)) == 0:
+                    open_ports.append(port)
+            except OSError:
+                pass
+    return open_ports
+
+
+def classify_device(vendor, open_ports):
+    """A rough, best-effort guess at a device's role from its vendor
+    name and open ports. Not authoritative - just a helpful label.
+
+    Parameters
+    ----------
+    vendor : str or None
+        As returned by lookup_vendor().
+    open_ports : list[int]
+        As returned by scan_device_ports().
+
+    Returns
+    -------
+    str
+        One of "printer", "router/switch", "windows host", "server",
+        "web-enabled device", or "unknown".
+    """
+    vendor_lower = (vendor or "").lower()
+    ports = set(open_ports or [])
+
+    if 9100 in ports:  # raw/JetDirect printing
+        return "printer"
+    if any(keyword in vendor_lower for keyword in (
+        "cisco", "netgear", "tp-link", "ubiquiti", "asustek", "d-link",
+        "mikrotik", "juniper",
+    )):
+        return "router/switch"
+    if 3389 in ports:  # RDP
+        return "windows host"
+    if 22 in ports:  # SSH
+        return "server"
+    if 80 in ports or 443 in ports:
+        return "web-enabled device"
+    return "unknown"
+
+
+def scan_devices_ports(devices, ports=COMMON_PORTS, timeout=0.3):
+    """Add "open_ports" and "role" fields to each device dict in
+    place, using scan_device_ports() and classify_device().
+
+    Parameters
+    ----------
+    devices : list[dict]
+        Devices as returned by scan_network() (ideally already
+        enriched via enrich_devices(), since classify_device() uses
+        vendor if available).
+
+    Returns
+    -------
+    list[dict]
+        The same list, for convenient chaining.
+    """
+    for device in devices:
+        open_ports = scan_device_ports(device["ip"], ports, timeout)
+        device["open_ports"] = open_ports
+        device["role"] = classify_device(device.get("vendor"), open_ports)
+    return devices
+
+
+def load_history(path):
+    """Load previously-persisted scan results, keyed by the exact
+    network string that was scanned.
+
+    Parameters
+    ----------
+    path : str
+        Path to the history file.
+
+    Returns
+    -------
+    dict[str, dict]
+        Maps network -> {"timestamp": ISO 8601 str, "devices": [...]}.
+        Empty if the file doesn't exist yet or isn't valid JSON -
+        a missing/corrupt history file means "nothing to diff
+        against", not an error worth crashing over.
+    """
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_scan(path, network, devices):
+    """Persist `devices` as the new most-recent scan for `network`,
+    leaving any other network's entry in the history file untouched.
+
+    Parameters
+    ----------
+    path : str
+        Path to the history file.
+    network : str
+        The network that was scanned - the key this scan is stored
+        under.
+    devices : list[dict]
+        The (ideally enriched) scan results to persist.
+    """
+    history = load_history(path)
+    history[network] = {
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "devices": devices,
+    }
+    with open(path, 'w') as f:
+        json.dump(history, f, indent=2)
+
+
+def diff_devices(previous_devices, current_devices):
+    """Compare two device lists by MAC address - a device's MAC is a
+    far more stable identifier than its IP, which can easily change
+    between scans under DHCP - and report what changed.
+
+    Parameters
+    ----------
+    previous_devices : list[dict]
+        Devices from an earlier scan (e.g. loaded via load_history()).
+    current_devices : list[dict]
+        Devices from the current scan.
+
+    Returns
+    -------
+    dict
+        "new": devices present now but not before.
+        "missing": devices present before but not now.
+        "ip_changed": (device, old_ip) pairs for devices whose MAC
+        matches a previous scan but whose IP has changed.
+    """
+    previous_by_mac = {d["mac"]: d for d in previous_devices}
+    current_by_mac = {d["mac"]: d for d in current_devices}
+
+    new = [
+        d for mac, d in current_by_mac.items() if mac not in previous_by_mac
+    ]
+    missing = [
+        d for mac, d in previous_by_mac.items() if mac not in current_by_mac
+    ]
+    ip_changed = [
+        (current_by_mac[mac], previous_by_mac[mac]["ip"])
+        for mac in current_by_mac
+        if mac in previous_by_mac
+        and current_by_mac[mac]["ip"] != previous_by_mac[mac]["ip"]
+    ]
+
+    return {"new": new, "missing": missing, "ip_changed": ip_changed}
+
+
+def export_devices(devices, path, fmt=None):
+    """Write `devices` to a CSV or JSON file.
+
+    Parameters
+    ----------
+    devices : list[dict]
+        Devices as returned by scan_network()/enrich_devices()
+        /scan_devices_ports().
+    path : str
+        Where to write the file.
+    fmt : str or None
+        'csv' or 'json'. If None, inferred from `path`'s extension
+        (.csv or .json).
+
+    Raises
+    ------
+    ValueError
+        If fmt is None and the extension isn't .csv or .json.
+    OSError
+        If the file can't be written.
+    """
+    if fmt is None:
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".csv":
+            fmt = "csv"
+        elif ext == ".json":
+            fmt = "json"
+        else:
+            raise ValueError(
+                f"cannot infer export format from {path!r} - pass "
+                "fmt='csv'/'json' (or --format on the command line), "
+                "or name the file .csv/.json"
+            )
+
+    if fmt == "csv":
+        fieldnames = ["ip", "mac", "vendor", "hostname"]
+        if any("role" in device for device in devices):
+            fieldnames += ["open_ports", "role"]
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(
+                f, fieldnames=fieldnames, extrasaction="ignore"
+            )
+            writer.writeheader()
+            for device in devices:
+                row = dict(device)
+                if isinstance(row.get("open_ports"), list):
+                    row["open_ports"] = ";".join(
+                        str(port) for port in row["open_ports"]
+                    )
+                writer.writerow(row)
+    else:  # json
+        with open(path, "w") as f:
+            json.dump(devices, f, indent=2)
+
+
 # Define a function to print the results
 def print_results(devices):
     if not devices:
         print('\nNo devices found.')
         return
-    # Print the header
-    print(
-        "\nIP Address",
-        "MAC Address",
-        "Vendor",
-        "Hostname",
-        sep="\t\t",
-        end="\n" + "-" * 70 + "\n",
-    )
-    # Loop through the devices
+    show_ports = any("role" in device for device in devices)
+    headers = ["IP Address", "MAC Address", "Vendor", "Hostname"]
+    if show_ports:
+        headers += ["Open Ports", "Role"]
+    print("\n" + "\t\t".join(headers), end="\n" + "-" * 70 + "\n")
     for device in devices:
         # Vendor/hostname are only present once enrich_devices() has
         # run; fall back to "-" so this still works for a plain,
         # un-enriched device list (e.g. in tests).
         vendor = device.get("vendor") or "-"
         hostname = device.get("hostname") or "-"
-        print(device["ip"], device["mac"], vendor, hostname, sep="\t\t")
+        row = [device["ip"], device["mac"], vendor, hostname]
+        if show_ports:
+            open_ports = device.get("open_ports") or []
+            ports_str = (
+                ",".join(str(port) for port in open_ports)
+                if open_ports else "-"
+            )
+            row += [ports_str, device.get("role") or "-"]
+        print("\t\t".join(row))
 
 
 def print_conflicts(conflicts):
@@ -250,6 +537,23 @@ def print_conflicts(conflicts):
         )
 
 
+def print_diff(diff):
+    """Print a summary of what changed since the last scan of this
+    network - see diff_devices()."""
+    if diff["new"]:
+        print("\nNew devices since last scan:")
+        for device in diff["new"]:
+            print(f"  + {device['ip']}\t{device['mac']}")
+    if diff["missing"]:
+        print("\nDevices missing since last scan:")
+        for device in diff["missing"]:
+            print(f"  - {device['ip']}\t{device['mac']}")
+    if diff["ip_changed"]:
+        print("\nDevices with a changed IP since last scan:")
+        for device, old_ip in diff["ip_changed"]:
+            print(f"  ~ {device['mac']}\t{old_ip} -> {device['ip']}")
+
+
 def print_error(message):
     """Print an error message in red using rich, via a shared console."""
     custom_theme = Theme({"danger": "red"})
@@ -257,8 +561,12 @@ def print_error(message):
     console.print(message, style="danger")
 
 
-# ------------------------------- Main Function -------------------------------
-def main():
+# --------------------------- Interactive Session ------------------------------
+def run_interactive():
+    """Run the interactive session (the original behaviour of this
+    program), extended with the opt-in port scan, history diff, and
+    export prompts added below.
+    """
     # Ask the user to enter the network address
     network = input(
         "Enter the network address (e.g., 192.168.1.0 or 192.168.1.0/24): "
@@ -271,7 +579,7 @@ def main():
             f"{network} is not a valid network address. "
             "Please enter a valid IP address or network."
         )
-        return
+        return 1
 
     try:
         devices = scan_network(network)
@@ -286,16 +594,145 @@ def main():
             "Permission denied. This script needs to send raw packets - "
             "try running it with sudo/as root."
         )
-        return
+        return 1
 
     conflicts = find_ip_conflicts(devices)
     if conflicts:
         print_conflicts(conflicts)
 
     enrich_devices(devices)
+
+    scan_ports_answer = input(
+        "\nAlso probe common ports on each device and guess its role? "
+        "This takes longer. [y/N]: "
+    ).strip().lower()
+    if scan_ports_answer in ("y", "yes"):
+        scan_devices_ports(devices)
+
     print_results(devices)
+
+    history = load_history(HISTORY_FILE)
+    previous_entry = history.get(network)
+    if previous_entry is not None:
+        print_diff(diff_devices(previous_entry["devices"], devices))
+    save_scan(HISTORY_FILE, network, devices)
+
+    export_path = input(
+        "\nExport results to a file (.csv or .json), or press Enter to "
+        "skip: "
+    ).strip()
+    if export_path:
+        try:
+            export_devices(devices, export_path)
+        except (OSError, ValueError) as e:
+            print_error(f"Could not export results: {e}")
+        else:
+            print(f"Results exported to {export_path}.")
+
+    return 0
+
+
+# ------------------------------ Non-Interactive CLI ---------------------------
+def build_arg_parser():
+    parser = argparse.ArgumentParser(
+        description="Scan a local network for devices via ARP, identifying "
+                     "each one's IP and MAC address. Run with no arguments "
+                     "for the interactive prompt.",
+    )
+    parser.add_argument(
+        "--network",
+        help="Network/address to scan, e.g. 192.168.1.0/24. Prompts "
+             "interactively if omitted.",
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=DEFAULT_TIMEOUT,
+        help=f"Seconds to wait for ARP replies (default: "
+             f"{DEFAULT_TIMEOUT}). A larger network may need more time "
+             "to avoid under-reporting.",
+    )
+    parser.add_argument(
+        "--output",
+        help="Write results to this file. Format is inferred from the "
+             "extension (.csv or .json) unless --format is given.",
+    )
+    parser.add_argument(
+        "--format", choices=["csv", "json"],
+        help="Force the export format instead of inferring it from "
+             "--output's extension.",
+    )
+    parser.add_argument(
+        "--scan-ports", action="store_true",
+        help="Also probe a handful of common ports on each device and "
+             "guess its role. Adds noticeable time per device, so this "
+             "is opt-in.",
+    )
+    parser.add_argument(
+        "--history-file", default=HISTORY_FILE,
+        help=f"Where to persist scan history for diffing against future "
+             f"scans (default: {HISTORY_FILE}).",
+    )
+    parser.add_argument(
+        "--no-history", action="store_true",
+        help="Don't compare against or update scan history.",
+    )
+    return parser
+
+
+def run_cli(args, parser):
+    """Run one CLI-mode scan and return a process exit code."""
+    try:
+        network = validate_network(args.network)
+    except ValueError:
+        parser.error(f"{args.network!r} is not a valid network address")
+
+    try:
+        devices = scan_network(network, timeout=args.timeout)
+    except PermissionError:
+        print_error(
+            "Permission denied. This script needs to send raw packets - "
+            "try running it with sudo/as root."
+        )
+        return 1
+
+    conflicts = find_ip_conflicts(devices)
+    if conflicts:
+        print_conflicts(conflicts)
+
+    enrich_devices(devices)
+
+    if args.scan_ports:
+        scan_devices_ports(devices)
+
+    print_results(devices)
+
+    if not args.no_history:
+        history = load_history(args.history_file)
+        previous_entry = history.get(network)
+        if previous_entry is not None:
+            print_diff(diff_devices(previous_entry["devices"], devices))
+        save_scan(args.history_file, network, devices)
+
+    if args.output:
+        try:
+            export_devices(devices, args.output, args.format)
+        except (OSError, ValueError) as e:
+            parser.error(f"could not export results: {e}")
+        print(f"\nResults exported to {args.output}.")
+
+    return 0
+
+
+# ------------------------------- Main Function -------------------------------
+def main():
+    parser = build_arg_parser()
+    args = parser.parse_args()
+
+    if args.network is None:
+        return run_interactive()
+
+    return run_cli(args, parser)
 
 
 # --------------------------- Call the Main Function --------------------------
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())
