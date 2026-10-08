@@ -49,7 +49,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         if self.path == "/api/scan":
             self._handle_scan()
         elif self.path == "/api/clear":
@@ -126,7 +126,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             self._json_response(500, {"status": "error", "message": str(e)})
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path == "/":
             self._serve_dashboard()
         elif self.path.startswith("/scan_history.json"):
@@ -165,7 +165,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: Any) -> None:
         # Silence default per-request logging to keep the console clean
         pass
 
