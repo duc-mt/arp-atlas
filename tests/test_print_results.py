@@ -18,6 +18,31 @@ class TestPrintResults:
         assert "9c:5a:6b:1e:4f:0c" in out
         assert "192.168.1.2" in out
 
+    def test_prints_vendor_and_hostname_when_present(self, capsys):
+        devices = [
+            {
+                "ip": "192.168.1.1",
+                "mac": "b8:27:eb:11:22:33",
+                "vendor": "Raspberry Pi Foundation",
+                "hostname": "pi-hole.local",
+            },
+        ]
+        main.print_results(devices)
+
+        out = capsys.readouterr().out
+        assert "Raspberry Pi Foundation" in out
+        assert "pi-hole.local" in out
+
+    def test_missing_vendor_or_hostname_prints_a_placeholder(self, capsys):
+        """A plain, un-enriched device dict (e.g. straight from
+        scan_network(), before enrich_devices() runs) must still print
+        cleanly rather than raising a KeyError."""
+        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        main.print_results(devices)  # must not raise
+
+        out = capsys.readouterr().out
+        assert "192.168.1.1" in out
+
     def test_empty_list_prints_a_friendly_message_not_a_bare_header(
         self, capsys
     ):
