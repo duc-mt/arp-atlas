@@ -335,21 +335,21 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const isWarning = pct >= 10 && pct < 50;
                 const barColor = isHealthy ? 'bg-healthy' : (isWarning ? 'bg-degraded' : 'bg-offline');
                 
-                let html = `<div class="bg-panel rounded-card border border-border mb-6 p-6">
-                    <div class="flex justify-between items-start mb-2">
-                        <h2 class="text-xl font-medium text-text">Network: ${network}</h2>
+                let html = `<div class="bg-panel rounded-card border border-border mb-4 p-4">
+                    <div class="flex justify-between items-start mb-3">
+                        <h3 class="text-sm font-medium text-text">Network: ${network}</h3>
                         <div class="flex space-x-2">
                             <button onclick="exportScanCsv('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Export CSV</button>
-                            <button onclick="showAvailableAddresses('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">View Available Addresses</button>
+                            <button onclick="showAvailableAddresses('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Available Addresses</button>
                         </div>
                     </div>
-                    <p class="text-xs text-muted mb-6">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
+                    <p class="text-xs text-muted mb-4">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
                     
-                    <div class="flex flex-col md:flex-row gap-6 mb-8 items-center">
+                    <div class="flex flex-col md:flex-row gap-6 mb-6 items-center">
                         <div class="flex-1 w-full">
                             <div class="flex justify-between text-xs mb-1.5">
-                                <span class="font-medium text-text">${stats.responded} of ${totalHosts} addresses found</span>
-                                <span class="font-medium text-text">${pct.toFixed(1)}%</span>
+                                <span class="font-medium text-muted uppercase tracking-wide">${stats.responded} of ${totalHosts} addresses found</span>
+                                <span class="font-mono font-semibold tabular-nums text-text">${pct.toFixed(1)}%</span>
                             </div>
                             <div class="w-full bg-panel-alt rounded-full h-1.5">
                                 <div class="${barColor} h-1.5 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
@@ -364,12 +364,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         <table class="w-full text-sm">
                             <thead>
                                 <tr class="text-left text-xs text-muted uppercase tracking-wide border-b border-border">
-                                    <th class="py-2.5 pr-3 font-medium">IP Address</th>
-                                    <th class="py-2.5 pr-3 font-medium">MAC Address</th>
-                                    <th class="py-2.5 pr-3 font-medium">Vendor</th>
-                                    <th class="py-2.5 pr-3 font-medium">Hostname</th>
-                                    <th class="py-2.5 pr-3 font-medium">Ports</th>
-                                    <th class="py-2.5 pr-3 font-medium">Role</th>
+                                    <th class="py-2 pr-3 font-medium">IP Address</th>
+                                    <th class="py-2 pr-3 font-medium">MAC Address</th>
+                                    <th class="py-2 pr-3 font-medium">Vendor</th>
+                                    <th class="py-2 pr-3 font-medium">Hostname</th>
+                                    <th class="py-2 pr-3 font-medium">Ports</th>
+                                    <th class="py-2 pr-3 font-medium">Role</th>
                                 </tr>
                             </thead>
                             <tbody>`;
@@ -429,7 +429,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <body class="bg-bg min-h-screen font-sans">
     <nav class="bg-panel border-b border-border shadow-sm">
         
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-[1200px] mx-auto px-6">
             <div class="flex flex-col sm:flex-row items-center justify-between h-auto sm:h-16 py-4 sm:py-0">
                 <div class="flex items-center mb-4 sm:mb-0">
                     <span class="font-semibold text-text text-lg tracking-tight">Network Hunter</span>
@@ -449,23 +449,23 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             </div>
         </div>
     </nav>
-    <main class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8" id="content">
+    <main class="max-w-[1200px] mx-auto px-6 py-6" id="content">
         <p class="p-4 text-muted text-sm">Loading dashboard...</p>
     </main>
 
     <!-- Available Addresses Modal -->
     <div id="available-modal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-panel rounded-card border border-border w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl">
-            <div class="px-6 py-4 border-b border-border flex justify-between items-center bg-panel rounded-t-card">
+            <div class="p-4 border-b border-border flex justify-between items-center bg-panel rounded-t-card">
                 <h3 id="available-title" class="text-sm font-medium text-text">Available Addresses</h3>
                 <button onclick="closeAvailableModal()" class="text-muted hover:text-text transition-colors">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="p-6 overflow-y-auto flex-1 bg-bg">
+            <div class="p-4 overflow-y-auto flex-1 bg-bg">
                 <ul id="available-list" class="space-y-1 font-mono text-xs text-muted"></ul>
             </div>
-            <div class="px-6 py-4 border-t border-border bg-panel flex justify-end space-x-3 rounded-b-card">
+            <div class="p-4 border-t border-border bg-panel flex justify-end space-x-3 rounded-b-card">
                 <button onclick="copyAvailable()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Copy</button>
                 <button onclick="exportAvailableCsv()" class="text-xs px-4 py-1.5 rounded-control bg-accent text-bg hover:opacity-90 font-medium transition-opacity">Export CSV</button>
             </div>
