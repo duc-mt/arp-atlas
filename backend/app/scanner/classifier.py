@@ -11,7 +11,7 @@ from backend.app.config import COMMON_PORTS
 
 def scan_device_ports(
     ip: str,
-    ports: list[int] = COMMON_PORTS,
+    ports: list[int] | None = None,
     timeout: float = 0.3,
 ) -> list[int]:
     """Attempt a TCP connect to each port in `ports` and return the
@@ -21,8 +21,8 @@ def scan_device_ports(
     ----------
     ip : str
         The IP address to probe.
-    ports : list[int]
-        Which ports to try.
+    ports : list[int] or None
+        Which ports to try. Defaults to COMMON_PORTS.
     timeout : float
         Seconds to wait for each connection attempt.
 
@@ -32,6 +32,7 @@ def scan_device_ports(
         The subset of `ports` that accepted a connection, in the
         order they were probed.
     """
+    ports = COMMON_PORTS if ports is None else ports
     open_ports = []
     for port in ports:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -147,7 +148,7 @@ def classify_device(vendor: str | None, open_ports: list[int]) -> str:
 
 def scan_devices_ports(
     devices: list[dict[str, Any]],
-    ports: list[int] = COMMON_PORTS,
+    ports: list[int] | None = None,
     timeout: float = 0.3,
     progress_callback: Any = None,
 ) -> list[dict[str, Any]]:
@@ -155,6 +156,7 @@ def scan_devices_ports(
     place, using scan_device_ports() and classify_device(), utilizing
     threads for speed.
     """
+    ports = COMMON_PORTS if ports is None else ports
 
     def _scan(device: dict[str, Any]) -> dict[str, Any]:
         open_ports = scan_device_ports(device["ip"], ports, timeout)
