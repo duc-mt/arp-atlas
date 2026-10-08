@@ -30,14 +30,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         }
         
         async function triggerScan() {
-            const startIp = document.getElementById('start-ip').value.trim();
-            const endIp = document.getElementById('end-ip').value.trim();
+            const target = document.getElementById('scan-target').value.trim();
             const iface = document.getElementById('iface-select').value;
             const scanPorts = document.getElementById('scan-ports').checked;
             const btn = document.getElementById('scan-btn');
             
-            if (!startIp || !endIp) {
-                alert("Please enter both a Start and End IPv4 address");
+            if (!target) {
+                alert("Please enter a target (CIDR or IP-IP range)");
                 return;
             }
             
@@ -49,7 +48,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const response = await fetch('/api/scan', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({start_ip: startIp, end_ip: endIp, iface: iface, scan_ports: scanPorts})
+                    body: JSON.stringify({target: target, iface: iface, scan_ports: scanPorts})
                 });
                 const result = await response.json();
                 if (response.ok) {
@@ -73,21 +72,40 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         window.currentData = null;
         window.currentAvailableIps = [];
         
-        function getAvailableIps(startIp, endIp, foundIps) {
-            function ipToLong(ip) {
-                return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
-            }
-            function longToIp(long) {
-                return `${(long >>> 24) & 255}.${(long >>> 16) & 255}.${(long >>> 8) & 255}.${long & 255}`;
-            }
-            
+        function ipToLong(ip) {
+            return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+        }
+        function longToIp(long) {
+            return `${(long >>> 24) & 255}.${(long >>> 16) & 255}.${(long >>> 8) & 255}.${long & 255}`;
+        }
+        
+        function getAvailableIpsRange(startIp, endIp, foundIps) {
             const startLong = ipToLong(startIp);
             const endLong = ipToLong(endIp);
+            const available = [];
+            const foundSet = new Set(foundIps);
+            for (let i = startLong; i <= endLong; i++) {
+                const ipStr = longToIp(i);
+                if (!foundSet.has(ipStr)) {
+                    available.push(ipStr);
+                }
+            }
+            return available;
+        }
+
+        function getAvailableIpsCidr(cidr, foundIps) {
+            const parts = cidr.split('/');
+            if (parts.length !== 2) return [];
+            const prefix = parseInt(parts[1], 10);
+            if (prefix > 30 || prefix < 8) return [];
+            const ipLong = ipToLong(parts[0]);
+            const mask = ~((1 << (32 - prefix)) - 1) >>> 0;
+            const networkLong = (ipLong & mask) >>> 0;
+            const broadcastLong = (networkLong | ~mask) >>> 0;
             
             const available = [];
             const foundSet = new Set(foundIps);
-            
-            for (let i = startLong; i <= endLong; i++) {
+            for (let i = networkLong + 1; i < broadcastLong; i++) {
                 const ipStr = longToIp(i);
                 if (!foundSet.has(ipStr)) {
                     available.push(ipStr);
@@ -101,11 +119,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             const info = window.currentData[network];
             const foundIps = info.devices.map(d => d.ip);
             
-            // Re-parse start and end IPs from network name "Start-End"
-            const parts = network.split(' on ')[0].split('-');
+            const baseNet = network.split(' on ')[0];
             let available = [];
-            if (parts.length === 2) {
-                available = getAvailableIps(parts[0], parts[1], foundIps);
+            if (baseNet.includes('-')) {
+                const parts = baseNet.split('-');
+                if (parts.length === 2) {
+                    available = getAvailableIpsRange(parts[0], parts[1], foundIps);
+                }
+            } else if (baseNet.includes('/')) {
+                available = getAvailableIpsCidr(baseNet, foundIps);
             }
             window.currentAvailableIps = available;
             
@@ -286,8 +308,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     <select id="iface-select" class="px-3 py-1.5 rounded text-slate-700 bg-white border-0">
                         <!-- IFACE_OPTIONS -->
                     </select>
-                    <input type="text" id="start-ip" placeholder="Start: 192.168.1.1" class="px-3 py-1.5 rounded text-slate-700 w-36 border-0 focus:ring-2 focus:ring-indigo-300">
-                    <input type="text" id="end-ip" placeholder="End: 192.168.1.254" class="px-3 py-1.5 rounded text-slate-700 w-36 border-0 focus:ring-2 focus:ring-indigo-300">
+                    <input type="text" id="scan-target" placeholder="192.168.1.0/24 or 10.0.0.1-10.0.0.50" class="px-3 py-1.5 rounded text-slate-700 w-64 border-0 focus:ring-2 focus:ring-indigo-300">
                     <label class="flex items-center text-white text-sm font-medium">
                         <input type="checkbox" id="scan-ports" class="mr-2"> Scan Ports
                     </label>
@@ -333,8 +354,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             
             try:
                 data = json.loads(post_data.decode('utf-8'))
-                start_ip = data.get('start_ip')
-                end_ip = data.get('end_ip')
+                target_input = data.get('target', '').strip()
                 iface = data.get('iface')
                 scan_ports = data.get('scan_ports', False)
                 
@@ -342,13 +362,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 import scapy.all as scapy
                 import main
                 
-                start_obj = ipaddress.IPv4Address(start_ip)
-                end_obj = ipaddress.IPv4Address(end_ip)
-                if start_obj > end_obj:
-                    start_obj, end_obj = end_obj, start_obj
-                
-                target_ips = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)]
-                network_str = f"{start_ip}-{end_ip}"
+                if "-" in target_input:
+                    start_ip, end_ip = target_input.split("-", 1)
+                    start_obj = ipaddress.IPv4Address(start_ip.strip())
+                    end_obj = ipaddress.IPv4Address(end_ip.strip())
+                    if start_obj > end_obj:
+                        start_obj, end_obj = end_obj, start_obj
+                    target_ips = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)]
+                    network_str = f"{start_obj}-{end_obj}"
+                else:
+                    net = ipaddress.ip_network(target_input, strict=False)
+                    target_ips = [str(ip) for ip in net.hosts()]
+                    network_str = str(net)
                 if iface:
                     network_str += f" on {iface}"
                 
