@@ -207,7 +207,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
         elif self.path == '/api/clear':
-            import os
             try:
                 if os.path.exists("scan_history.json"):
                     os.remove("scan_history.json")
@@ -240,7 +239,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
         elif self.path == '/api/clear':
-            import os
             try:
                 if os.path.exists("scan_history.json"):
                     os.remove("scan_history.json")
