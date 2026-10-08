@@ -14,6 +14,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         
+        async function clearHistory() {
+            if (!confirm("Are you sure you want to clear all scan history?")) return;
+            try {
+                const response = await fetch('/api/clear', { method: 'POST' });
+                if (response.ok) {
+                    document.getElementById('content').innerHTML = '<p class="text-slate-500 p-4">History cleared.</p>';
+                } else {
+                    alert("Failed to clear history");
+                }
+            } catch (e) {
+                alert("Error clearing history");
+            }
+        }
+        
         async function triggerScan() {
             const network = document.getElementById('network-input').value;
             const scanPorts = document.getElementById('scan-ports').checked;
@@ -59,6 +73,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 btn.disabled = true;
                 btn.innerText = "Refreshing...";
                 btn.classList.add("opacity-50");
+            }
+            // Clear the dashboard screen immediately for visual feedback
+            const container = document.getElementById('content');
+            if (container) {
+                container.innerHTML = '<p class="p-4 text-slate-500">Refreshing data...</p>';
             }
             try {
                 const response = await fetch('/scan_history.json?t=' + new Date().getTime());
@@ -143,6 +162,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     </label>
                     <button onclick="triggerScan()" id="scan-btn" class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Scan Network</button>
                     <button onclick="fetchHistory()" id="refresh-btn" class="bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Refresh</button>
+                    <button onclick="clearHistory()" id="clear-btn" class="bg-red-500 hover:bg-red-400 text-white px-4 py-2 rounded shadow transition text-sm font-semibold">Clear</button>
                 </div>
             </div>
         </div>
@@ -186,6 +206,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+        elif self.path == '/api/clear':
+            import os
+            try:
+                if os.path.exists("scan_history.json"):
+                    os.remove("scan_history.json")
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status": "success"}')
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -206,6 +238,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(f.read())
             else:
                 self.send_response(404)
+                self.end_headers()
+        elif self.path == '/api/clear':
+            import os
+            try:
+                if os.path.exists("scan_history.json"):
+                    os.remove("scan_history.json")
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status": "success"}')
+            except Exception as e:
+                self.send_response(500)
                 self.end_headers()
         else:
             self.send_response(404)
