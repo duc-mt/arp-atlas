@@ -150,6 +150,60 @@ A vendor or hostname of `-` just means that lookup came back empty (an
 unregistered/locally-administered MAC, or no PTR record) - both routine on
 most networks, not an error.
 
+# Architecture
+
+```
+arp-atlas/
+├── backend/                Core scanning engine and HTTP server
+│   └── app/
+│       ├── config.py       Shared constants (DEFAULT_TIMEOUT, HISTORY_FILE, COMMON_PORTS)
+│       ├── scanner/
+│       │   ├── arp_scanner.py    validate_network() + scan_network() — Scapy ARP sweep
+│       │   └── classifier.py     scan_device_ports(), classify_device(), scan_devices_ports()
+│       ├── services/
+│       │   ├── enrichment.py     lookup_vendor() (OUI), lookup_hostname() (rDNS), enrich_devices()
+│       │   ├── conflict_service.py  find_ip_conflicts() — ARP anomaly / spoofing detection
+│       │   ├── history_service.py   load_history(), save_scan(), diff_devices()
+│       │   └── export_service.py    export_devices() — CSV / JSON output
+│       └── server/
+│           ├── handler.py    DashboardHandler — HTTP request handler (POST /api/scan, GET /)
+│           └── server.py     run_dashboard() — TCP server entry point
+│   └── tests/              Unit tests for all backend modules
+├── cli/                    Command-line interface
+│   └── arp_atlas_cli/
+│       ├── main.py         build_arg_parser(), run_cli(), run_interactive(), main()
+│       └── formatters.py   print_results(), print_diff(), print_conflicts(), print_error()
+│   └── tests/              Unit tests for CLI and formatters
+├── frontend/
+│   └── dashboard.html      Single-file web dashboard (no build step)
+├── scripts/
+│   └── run-dashboard.sh    Convenience launcher (auto-elevates to sudo)
+├── main.py                 Backward-compat shim — re-exports everything so
+│                           `sudo python main.py` and `import main` still work
+└── dashboard.py            Backward-compat shim — re-exports run_dashboard
+```
+
+**Data flow (CLI scan)**:
+`main()` → `validate_network()` → `scan_network()` (Scapy ARP broadcast, needs root)
+→ `find_ip_conflicts()` → `enrich_devices()` (OUI lookup + async rDNS, no root needed)
+→ optionally `scan_devices_ports()` + `classify_device()` (TCP connect, opt-in)
+→ `print_results()` / JSON-lines stdout → `diff_devices()` against history → `save_scan()`.
+
+**Data flow (dashboard)**:
+Browser → `POST /api/scan` → same pipeline above, result persisted to `scan_history.json`
+→ browser polls `GET /scan_history.json` to render the table.
+
+**Why root is required**: `scapy.srp()` opens a raw Layer-2 socket to send and capture
+ARP frames. Everything downstream — vendor lookup, rDNS, port scan, history, export —
+runs as normal Python and needs no elevated privileges.
+
+**Why a single `dashboard.html`**: the dashboard has no build step and no npm dependency.
+All interactivity is vanilla JS + a small amount of inline CSS. Scapy injects the
+interface `<option>` list server-side on each `GET /`; everything else is fetched via
+`fetch()` from the running Python server.
+
+---
+
 # Testing
 
 Install the dev dependencies and run the test suite:
@@ -163,6 +217,7 @@ Sending real ARP packets needs root privileges and a real network, so
 the tests never do that: `scapy.srp()` is mocked out everywhere, and
 only the ordinary Python logic around it (address validation, result
 parsing, output formatting, error handling) is under test.
+
 
 # Development
 
