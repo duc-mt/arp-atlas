@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from pathlib import Path
 """Tests for the non-interactive CLI mode.
 
 Exercises cli.arp_atlas_cli.main.main() with a mocked sys.argv, which is how a
@@ -159,7 +160,7 @@ class TestHistoryFlags:
 
 
 class TestOutputFlag:
-    def test_exports_to_the_given_path(self, tmp_path: pytest.fixture) -> None:  # type: ignore[valid-type]
+    def test_exports_to_the_given_path(self, tmp_path: Path) -> None:
         out_path = str(tmp_path / "scan.csv")
         with mock.patch(f"{_M}.scan_network", return_value=[]), \
              mock.patch(f"{_M}.load_history", return_value={}), \
@@ -168,7 +169,7 @@ class TestOutputFlag:
 
         assert (tmp_path / "scan.csv").exists()
 
-    def test_format_flag_overrides_extension_inference(self, tmp_path: pytest.fixture) -> None:  # type: ignore[valid-type]
+    def test_format_flag_overrides_extension_inference(self, tmp_path: Path) -> None:
         out_path = str(tmp_path / "scan.dat")
         with mock.patch(f"{_M}.scan_network", return_value=[]), \
              mock.patch(f"{_M}.load_history", return_value={}), \
@@ -183,7 +184,7 @@ class TestOutputFlag:
         assert content.strip().startswith("[")  # valid JSON array
 
     def test_unrecognised_extension_without_format_is_an_error(
-        self, tmp_path: pytest.fixture  # type: ignore[valid-type]
+        self, tmp_path: Path
     ) -> None:
         out_path = str(tmp_path / "scan.txt")
         with mock.patch(f"{_M}.scan_network", return_value=[]), \
