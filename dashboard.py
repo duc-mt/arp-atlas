@@ -2,8 +2,6 @@ import http.server
 import json
 import os
 import socketserver
-import threading
-from typing import Any
 
 with open(os.path.join(os.path.dirname(__file__), "dashboard.html"), encoding="utf-8") as f:
     DASHBOARD_HTML = f.read()
@@ -86,7 +84,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(b'{"status": "success"}')
-            except Exception as e:
+            except Exception:
                 self.send_response(500)
                 self.end_headers()
         else:
