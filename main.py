@@ -31,6 +31,43 @@ import ipaddress
 
 
 # ---------------------------- Function Definitions ---------------------------
+def validate_network(network):
+    """Validate and normalise a user-supplied network address.
+
+    Parameters
+    ----------
+    network : str
+        The raw string typed by the user, e.g. "192.168.1.0/24".
+
+    Returns
+    -------
+    str
+        The input with surrounding whitespace removed.
+
+    Raises
+    ------
+    ValueError
+        If the input isn't a valid IP address or network, once
+        whitespace has been stripped.
+    """
+    # NOTE: this used to feed the raw, un-stripped input straight into
+    # ipaddress.ip_network(). A pasted address with a trailing newline
+    # or leading space (an extremely common paste artifact) is a
+    # perfectly valid address once trimmed, but was rejected outright.
+    network = network.strip()
+
+    # NOTE: ip_network() defaults to strict=True, which rejects any
+    # address with host bits set relative to its prefix - e.g.
+    # "192.168.1.5/24" (a natural way to type "scan the subnet this
+    # host is on") was rejected with "has host bits set", even though
+    # the intent is unambiguous and scapy's own address expansion
+    # already normalises it down to the containing network correctly.
+    # strict=False accepts it, matching what actually gets scanned.
+    ipaddress.ip_network(network, strict=False)
+
+    return network
+
+
 # Define a function to scan a network
 def scan_network(network):
     # Create an ARP request packet with the network address
@@ -68,6 +105,9 @@ def scan_network(network):
 
 # Define a function to print the results
 def print_results(devices):
+    if not devices:
+        print('\nNo devices found.')
+        return
     # Print the header
     print(
         "\nIP Address",
@@ -81,6 +121,13 @@ def print_results(devices):
         print(device["ip"], device["mac"], sep="\t\t")
 
 
+def print_error(message):
+    """Print an error message in red using rich, via a shared console."""
+    custom_theme = Theme({"danger": "red"})
+    console = Console(theme=custom_theme)
+    console.print(message, style="danger")
+
+
 # ------------------------------- Main Function -------------------------------
 def main():
     # Ask the user to enter the network address
@@ -88,23 +135,31 @@ def main():
         "Enter the network address (e.g., 192.168.1.0 or 192.168.1.0/24): "
     )
 
-    # Validate the network address using ipaddress.ip_network()
     try:
-        # This will raise a ValueError if the input is not
-        # a valid IP address (192.168.1.0) or a network range (192.168.1.0/24)
-        ip_network = ipaddress.ip_network(network)  # noqa: F841
-        # Scan the network and store the results
-        devices = scan_network(network)
-        # Print the results
-        print_results(devices)
+        network = validate_network(network)
     except ValueError:
-        # Print an error message
-        # Define a custom theme named "danger"
-        custom_theme = Theme({"danger": "red"})
-        # Create a Console object with the custom theme
-        console = Console(theme=custom_theme)
-        # Print error text in the "danger" style
-        console.print(f"{network} is not a valid network address. Please enter a valid IP address or network.", style="danger",)  # noqa: E501
+        print_error(
+            f"{network} is not a valid network address. "
+            "Please enter a valid IP address or network."
+        )
+        return
+
+    try:
+        devices = scan_network(network)
+    except PermissionError:
+        # NOTE: previously unhandled - scanning requires raw-socket
+        # access, which needs root privileges (per the README's own
+        # "run as root" instruction). Without them, scapy.srp() raises
+        # PermissionError, which used to crash with a raw traceback
+        # instead of the same kind of friendly message every other
+        # error in this script gets.
+        print_error(
+            "Permission denied. This script needs to send raw packets - "
+            "try running it with sudo/as root."
+        )
+        return
+
+    print_results(devices)
 
 
 # --------------------------- Call the Main Function --------------------------
