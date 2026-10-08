@@ -30,6 +30,7 @@ import datetime
 import ipaddress
 import json
 import os
+import sys
 import socket
 
 
@@ -341,26 +342,87 @@ def classify_device(vendor: str | None, open_ports: list[int]) -> str:
     Returns
     -------
     str
-        One of "printer", "router/switch", "windows host", "server",
-        "web-enabled device", or "unknown".
+        One of the categorized roles or "unknown".
     """
     vendor_lower = (vendor or "").lower()
     ports = set(open_ports or [])
 
-    if 3389 in ports:  # RDP
-        return "windows host"
-    if 22 in ports:  # SSH
-        return "server"
-    if 9100 in ports:  # raw/JetDirect printing
-        return "printer"
-    if any(keyword in vendor_lower for keyword in (
-        "cisco", "netgear", "tp-link", "ubiquiti", "asustek", "d-link",
-        "mikrotik", "juniper",
-    )):
-        return "router/switch"
-    if 80 in ports or 443 in ports:
-        return "web-enabled device"
-    return "unknown"
+    scores = {
+        "router/switch": 0,
+        "access point": 0,
+        "ip camera": 0,
+        "smart home device": 0,
+        "printer": 0,
+        "windows host": 0,
+        "linux host": 0,
+        "server": 0,
+        "web-enabled device": 0,
+    }
+
+    # Narrow, high-confidence Layer 4 signatures
+    if 554 in ports or {8000, 37777, 34567} & ports:
+        scores["ip camera"] += 5
+    if {1883, 8883} & ports:
+        scores["smart home device"] += 3
+    if {9100, 515, 631} & ports:
+        scores["printer"] += 5
+
+    # Windows
+    windows_hits = {135, 445, 3389} & ports
+    if len(windows_hits) >= 2:
+        scores["windows host"] += 4
+    elif 3389 in windows_hits:
+        scores["windows host"] += 3
+
+    # Server
+    server_ports = {3306, 5432, 21, 22, 25, 143}
+    server_hits = server_ports & ports
+    if len(server_hits) >= 2:
+        scores["server"] += 4
+
+    # SSH alone: weak, generic signal
+    if 22 in ports and len(server_hits) < 2:
+        scores["server"] += 1
+        scores["linux host"] += 1
+
+    # Catch-all web
+    if {80, 443, 8080, 8443} & ports:
+        scores["web-enabled device"] += 1
+
+    # Vendor-based signals
+    if any(keyword in vendor_lower for keyword in ("cisco", "juniper", "mikrotik", "netgear", "tp-link", "asustek", "d-link")):
+        if 23 in ports or 161 in ports:
+            scores["router/switch"] += 5
+        else:
+            scores["router/switch"] += 2
+            
+    if any(keyword in vendor_lower for keyword in ("hikvision", "dahua")):
+        if {554, 8000, 37777, 34567} & ports:
+            scores["ip camera"] += 5
+        else:
+            scores["ip camera"] += 2
+            
+    if any(keyword in vendor_lower for keyword in ("espressif", "xiaomi", "lumi", "tuya", "sonoff")):
+        scores["smart home device"] += 3
+        
+    if any(keyword in vendor_lower for keyword in ("ubiquiti", "aruba")):
+        if 23 not in ports:
+            scores["access point"] += 4
+        else:
+            scores["router/switch"] += 2
+
+    best_category = max(scores, key=scores.get)
+    best_score = scores[best_category]
+
+    if best_score == 0:
+        return "unknown"
+
+    # Guard against ties
+    top_categories = [c for c, s in scores.items() if s == best_score]
+    if len(top_categories) > 1:
+        return "unknown"
+
+    return best_category
 
 
 import concurrent.futures
@@ -775,8 +837,23 @@ def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     return 0
 
 
+def check_npcap_on_windows() -> None:
+    if sys.platform == "win32":
+        system32 = os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "System32")
+        paths = [
+            os.path.join(system32, "Npcap", "wpcap.dll"),
+            os.path.join(system32, "wpcap.dll")
+        ]
+        if not any(os.path.exists(p) for p in paths):
+            print("\n[!] ERROR: Npcap is not installed.", file=sys.stderr)
+            print("[!] Arp-Atlas uses Scapy, which requires Npcap to capture and send packets on Windows.", file=sys.stderr)
+            print("[!] Please download and install Npcap from: https://npcap.com/#download", file=sys.stderr)
+            print("[!] (Make sure to check 'Install Npcap in WinPcap API-compatible Mode' if prompted during installation)\n", file=sys.stderr)
+            sys.exit(1)
+
 # ------------------------------- Main Function -------------------------------
 def main() -> int:
+    check_npcap_on_windows()
     parser = build_arg_parser()
     args = parser.parse_args()
 
