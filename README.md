@@ -35,14 +35,18 @@ module for colourised error output, and the standard library's
 
 # Requirements
 
-To run this project, you will to install necessary depencies by:
+To run this project, Python 3.10+ is required. It is recommended to use a virtual environment (`.venv`):
 
 ```bash
-$ pip install -r requirements.txt
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-The ipaddress and socket modules are included in the standard library of
-Python 3.
+The `ipaddress` and `socket` modules are included in the standard library of Python 3.
 
 # Usage
 
@@ -57,7 +61,7 @@ Features include:
 
 To launch:
 ```bash
-sudo python main.py --dashboard
+sudo .venv/bin/python main.py --dashboard
 ```
 Navigate to `http://localhost:8080` in your web browser.
 
@@ -67,13 +71,13 @@ To use this project, you can run the script main.py from the command
 line as root, either interactively:
 
 ```bash
-$ sudo python main.py
+$ sudo .venv/bin/python main.py
 ```
 
 ...or non-interactively, for scripting and automation:
 
 ```bash
-$ sudo python main.py --network 192.168.1.0/24
+$ sudo .venv/bin/python main.py --network 192.168.1.0/24
 ```
 
 The network address must be a valid IP address or network, otherwise the
