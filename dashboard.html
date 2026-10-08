@@ -3,10 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ARP Atlas Dashboard</title>
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="description" content="ARP Atlas | Local Network Scanner Dashboard">
+    <title>ARP Atlas | Network Scanner</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
@@ -28,8 +30,8 @@
               unknown: "var(--color-unknown)",
             },
             fontFamily: {
-              sans: ["Inter", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-              mono: ["'JetBrains Mono'", "'SFMono-Regular'", "Consolas", "monospace"],
+              sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
+              mono: ["'Fira Code'", "'SFMono-Regular'", "Consolas", "monospace"],
             },
             borderRadius: {
               card: "10px",
@@ -41,32 +43,32 @@
     </script>
     <style>
       :root {
-        --color-bg: #0a0e1a;
-        --color-panel: #121826;
-        --color-panel-alt: #161d2e;
-        --color-border: #232b3d;
-        --color-text: #e6eaf2;
-        --color-muted: #8b93a7;
-        --color-accent: #34d8c6;
-        --color-accent-soft: rgba(52, 216, 198, 0.12);
-        --color-healthy: #3dd68c;
-        --color-degraded: #f5b94d;
-        --color-offline: #f2545b;
-        --color-unknown: #6b7280;
+        --color-bg: #020617;
+        --color-panel: #0f172a;
+        --color-panel-alt: #1e293b;
+        --color-border: #334155;
+        --color-text: #f1f5f9;
+        --color-muted: #94a3b8;
+        --color-accent: #38bdf8;
+        --color-accent-soft: rgba(56, 189, 248, 0.12);
+        --color-healthy: #10b981;
+        --color-degraded: #f59e0b;
+        --color-offline: #ef4444;
+        --color-unknown: #64748b;
       }
       :root.light {
-        --color-bg: #f5f6fa;
-        --color-panel: #ffffff;
-        --color-panel-alt: #f0f2f7;
-        --color-border: #e1e4ec;
-        --color-text: #1b2130;
-        --color-muted: #636b80;
-        --color-accent: #0f8f81;
-        --color-accent-soft: rgba(15, 143, 129, 0.1);
-        --color-healthy: #1e9e6b;
-        --color-degraded: #a8690f;
-        --color-offline: #d6394a;
-        --color-unknown: #6b7280;
+        --color-bg: #f8fafc;
+        --color-panel: #f1f5f9;
+        --color-panel-alt: #e2e8f0;
+        --color-border: #cbd5e1;
+        --color-text: #0f172a;
+        --color-muted: #64748b;
+        --color-accent: #0284c7;
+        --color-accent-soft: rgba(2, 132, 199, 0.1);
+        --color-healthy: #059669;
+        --color-degraded: #d97706;
+        --color-offline: #dc2626;
+        --color-unknown: #64748b;
       }
       body {
         background-color: var(--color-bg);
@@ -99,7 +101,7 @@
         function updateThemeIcon() {
             const isLight = document.documentElement.classList.contains('light');
             const btn = document.getElementById('theme-toggle-btn');
-            if (btn) btn.innerHTML = isLight ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>' : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>';
+            if (btn) btn.innerHTML = isLight ? '<svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>' : '<svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>';
         }
         function updateChartColors() {
             if (window.currentCharts) {
@@ -340,11 +342,11 @@
             const listEl = document.getElementById('available-list');
             const formattedRanges = formatIpRanges(available);
             listEl.innerHTML = formattedRanges.map(r => `<li>${r}</li>`).join('');
-            document.getElementById('available-modal').classList.remove('hidden');
+            document.getElementById('available-modal').showModal();
         }
 
         function closeAvailableModal() {
-            document.getElementById('available-modal').classList.add('hidden');
+            document.getElementById('available-modal').close();
         }
 
         function copyAvailable() {
@@ -510,6 +512,7 @@
     </script>
 </head>
 <body class="bg-bg min-h-screen font-sans">
+    <a href="#content" class="sr-only focus:not-sr-only focus:absolute focus:p-4 focus:bg-panel focus:text-accent z-50">Skip to main content</a>
     <nav class="bg-panel border-b border-border shadow-sm">
         
         <div class="max-w-[1200px] mx-auto px-6">
@@ -518,18 +521,18 @@
                     <span class="font-semibold text-text text-lg tracking-tight">ARP Atlas</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-3">
-                    <select id="iface-select" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text focus:outline-none focus:border-accent">
+                    <select id="iface-select" aria-label="Network Interface" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text focus:outline-none focus:border-accent">
                         <!-- IFACE_OPTIONS -->
                     </select>
-                    <input type="text" id="scan-target" placeholder="192.168.1.0/24 or 10.0.0.1-10.0.0.50" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text focus:outline-none focus:border-accent w-64 placeholder-muted">
+                    <input type="text" id="scan-target" aria-label="Target network" placeholder="192.168.1.0/24 or 10.0.0.1-10.0.0.50" class="text-xs px-2.5 py-1.5 rounded-control bg-panel-alt border border-border text-text focus:outline-none focus:border-accent w-64 placeholder-muted">
                     <label class="flex items-center text-text text-xs font-medium cursor-pointer">
                         <input type="checkbox" id="scan-ports" class="mr-1.5 accent-accent"> Scan Ports
                     </label>
                     <button onclick="triggerScan()" id="scan-btn" class="text-xs px-4 py-1.5 rounded-control bg-accent text-bg hover:opacity-90 font-medium transition-opacity">Scan Network</button>
                     
                     <button onclick="clearHistory()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-offline hover:border-offline transition-colors">Clear</button>
-                    <button id="theme-toggle-btn" onclick="toggleTheme()" class="text-muted hover:text-text focus:outline-none p-1.5 rounded-control border border-transparent hover:border-border transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <button id="theme-toggle-btn" aria-label="Toggle theme" onclick="toggleTheme()" class="text-muted hover:text-text focus:outline-none p-1.5 rounded-control border border-transparent hover:border-border transition-colors">
+                        <svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                     </button>
                 </div>
             </div>
@@ -540,15 +543,15 @@
     </main>
 
     <!-- Available Addresses Modal -->
-    <div id="available-modal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-        <div class="bg-panel rounded-card border border-border w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl">
+    <dialog id="available-modal" class="bg-transparent p-4 w-full max-w-lg backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm shadow-2xl">
+        <div class="bg-panel rounded-card border border-border w-full flex flex-col m-auto">
             <div class="p-4 border-b border-border flex justify-between items-center bg-panel rounded-t-card">
                 <h3 id="available-title" class="text-sm font-medium text-text">Available Addresses</h3>
-                <button onclick="closeAvailableModal()" class="text-muted hover:text-text transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <button onclick="closeAvailableModal()" aria-label="Close modal" class="text-muted hover:text-text transition-colors">
+                    <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="p-4 overflow-y-auto flex-1 bg-bg">
+            <div class="p-4 overflow-y-auto flex-1 bg-bg max-h-[60vh]">
                 <ul id="available-list" class="space-y-1 font-mono text-xs text-muted"></ul>
             </div>
             <div class="p-4 border-t border-border bg-panel flex justify-end space-x-3 rounded-b-card">
@@ -556,6 +559,6 @@
                 <button onclick="exportAvailableCsv()" class="text-xs px-4 py-1.5 rounded-control bg-accent text-bg hover:opacity-90 font-medium transition-opacity">Export CSV</button>
             </div>
         </div>
-    </div>
+    </dialog>
 </body>
 </html>
