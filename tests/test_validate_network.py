@@ -15,51 +15,53 @@ Regression coverage for two bugs found during review:
    already normalises it down to the containing network correctly.
 """
 
-
 import pytest
 
 import main
 
 
-class TestAcceptsValidAddresses:
-    def test_bare_network_address(self):
-        assert main.validate_network("192.168.1.0/24") == "192.168.1.0/24"
+class TestValidateNetwork:
+    @pytest.mark.parametrize(
+        "input_network, expected",
+        [
+            ("192.168.1.0/24", "192.168.1.0/24"),
+            ("192.168.1.5", "192.168.1.5/32"),
+            (" 192.168.1.0/24", "192.168.1.0/24"),
+            ("192.168.1.0/24 ", "192.168.1.0/24"),
+            ("192.168.1.0/24\n", "192.168.1.0/24"),
+            ("192.168.1.5/24", "192.168.1.0/24"),
+        ],
+        ids=[
+            "bare_network",
+            "single_host",
+            "leading_space",
+            "trailing_space",
+            "trailing_newline",
+            "host_bits_set_normalized",
+        ],
+    )
+    def test_valid_inputs(self, input_network: str, expected: str) -> None:
+        """Test that valid network addresses (and those with common formatting issues) are accepted and normalized."""
+        assert main.validate_network(input_network) == expected
 
-    def test_single_host_without_prefix(self):
-        assert main.validate_network("192.168.1.5") == "192.168.1.5/32"
-
-
-class TestStripsWhitespace:
-    def test_leading_space(self):
-        assert main.validate_network(" 192.168.1.0/24") == "192.168.1.0/24"
-
-    def test_trailing_space(self):
-        assert main.validate_network("192.168.1.0/24 ") == "192.168.1.0/24"
-
-    def test_trailing_newline(self):
-        assert main.validate_network("192.168.1.0/24\n") == "192.168.1.0/24"
-
-
-class TestAcceptsHostAddressWithPrefix:
-    def test_host_bits_set_is_no_longer_rejected(self):
-        # Previously raised ValueError("... has host bits set").
-        result = main.validate_network("192.168.1.5/24")
-        assert result == "192.168.1.0/24"
-
-
-class TestRejectsInvalidInput:
-    def test_garbage_string(self):
-        with pytest.raises(ValueError):
-            main.validate_network("not an address")
-
-    def test_empty_string(self):
-        with pytest.raises(ValueError):
-            main.validate_network("")
-
-    def test_whitespace_only(self):
-        with pytest.raises(ValueError):
-            main.validate_network("   ")
-
-    def test_out_of_range_octet(self):
-        with pytest.raises(ValueError):
-            main.validate_network("999.168.1.0/24")
+    @pytest.mark.parametrize(
+        "invalid_network",
+        [
+            "not an address",
+            "",
+            "   ",
+            "999.168.1.0/24",
+        ],
+        ids=[
+            "garbage_string",
+            "empty_string",
+            "whitespace_only",
+            "out_of_range_octet",
+        ],
+    )
+    def test_invalid_inputs(self, invalid_network: str) -> None:
+        """Test that garbage strings, empty inputs, or out-of-range IPs correctly raise ValueErrors."""
+        with pytest.raises(
+            ValueError, match="does not appear to be an IPv4 or IPv6 network"
+        ):
+            main.validate_network(invalid_network)
