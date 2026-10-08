@@ -322,25 +322,57 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             
             try:
                 data = json.loads(post_data.decode('utf-8'))
-                network = data.get('network')
+                start_ip = data.get('start_ip')
+                end_ip = data.get('end_ip')
+                iface = data.get('iface')
                 scan_ports = data.get('scan_ports', False)
                 
+                import ipaddress
+                import scapy.all as scapy
                 import main
-                valid_network = main.validate_network(network)
-                devices = main.scan_network(valid_network)
+                
+                start_obj = ipaddress.IPv4Address(start_ip)
+                end_obj = ipaddress.IPv4Address(end_ip)
+                if start_obj > end_obj:
+                    start_obj, end_obj = end_obj, start_obj
+                
+                target_ips = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)]
+                network_str = f"{start_ip}-{end_ip}"
+                if iface:
+                    network_str += f" on {iface}"
+                
+                devices = main.scan_network(target_ips, iface=iface)
+                
+                wrong_iface_count = 0
+                for ip in target_ips:
+                    route = scapy.conf.route.route(ip)[0]
+                    if hasattr(route, "name"): route = route.name
+                    if route != iface:
+                        wrong_iface_count += 1
+                        
+                responded = len(devices)
+                no_response = len(target_ips) - responded - wrong_iface_count
+                if no_response < 0: no_response = 0
+                
+                stats = {
+                    "responded": responded,
+                    "wrong_iface": wrong_iface_count,
+                    "no_response": no_response
+                }
+                
                 main.enrich_devices(devices)
                 
                 if scan_ports:
                     main.scan_devices_ports(devices)
                 
-                main.save_scan(main.HISTORY_FILE, valid_network, devices)
+                main.save_scan(main.HISTORY_FILE, network_str, devices, stats=stats)
                 
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "success", "network": valid_network}).encode('utf-8'))
+                self.wfile.write(json.dumps({"status": "success", "network": network_str, "found": len(devices)}).encode('utf-8'))
             except Exception as e:
-                self.send_response(400)
+                self.send_response(500)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
