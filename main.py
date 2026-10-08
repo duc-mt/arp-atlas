@@ -359,17 +359,29 @@ def classify_device(vendor: str | None, open_ports: list[int]) -> str:
 
 import concurrent.futures
 
-def scan_devices_ports(devices: list[dict[str, Any]], ports: list[int] = COMMON_PORTS, timeout: float = 0.3) -> list[dict[str, Any]]:
+def scan_devices_ports(
+    devices: list[dict[str, Any]], 
+    ports: list[int] = COMMON_PORTS, 
+    timeout: float = 0.3,
+    progress_callback: Any = None
+) -> list[dict[str, Any]]:
     """Add "open_ports" and "role" fields to each device dict in
     place, using scan_device_ports() and classify_device(), utilizing threads for speed.
     """
-    def _scan(device: dict[str, Any]) -> None:
+    def _scan(device: dict[str, Any]) -> dict[str, Any]:
         open_ports = scan_device_ports(device["ip"], ports, timeout)
         device["open_ports"] = open_ports
         device["role"] = classify_device(device.get("vendor"), open_ports)
+        return device
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        executor.map(_scan, devices)
+        futures = {executor.submit(_scan, d): d for d in devices}
+        count = 0
+        for future in concurrent.futures.as_completed(futures):
+            device = future.result()
+            count += 1
+            if progress_callback:
+                progress_callback(count, len(devices), device)
     return devices
 
 
