@@ -50,11 +50,11 @@ def lookup_vendor(mac: str) -> str | None:
 async def _lookup_hostname_async(ip: str, timeout: float) -> str | None:
     loop = asyncio.get_running_loop()
     try:
-        host, _ = await asyncio.wait_for(
-            loop.getnameinfo((ip, 0), flags=socket.NI_NAMEREQD),
+        res = await asyncio.wait_for(
+            loop.run_in_executor(None, socket.getnameinfo, (ip, 0), socket.NI_NAMEREQD),
             timeout=timeout,
         )
-        return host
+        return res[0]
     except (asyncio.TimeoutError, socket.gaierror, OSError):
         return None
 
