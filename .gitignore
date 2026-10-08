@@ -13,3 +13,6 @@ scan_history.json
 
 # OS metadata
 .DS_Store
+
+# Build artifacts
+*.egg-info/

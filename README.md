@@ -35,7 +35,34 @@ module for colourised error output, and the standard library's
 
 # Requirements
 
-To run this project, Python 3.10+ is required. It is recommended to use a virtual environment (`.venv`):
+To run this project, Python 3.10+ is required.
+
+### Quick Start (Recommended)
+
+You can run the seamless cross-platform `run.py` launcher, which automatically creates the `.venv`, installs dependencies, and syncs updates:
+
+```bash
+./run.py                       # Interactive prompt
+./run.py --dashboard           # Launch web dashboard
+./run.py --network 10.0.0.0/24 # Non-interactive scan
+```
+
+### Running without `sudo` (Optional)
+
+Because ARP scanning uses raw Layer-2 sockets (`scapy`), execution normally requires elevated privileges (`sudo`). To run as a standard user without `sudo`:
+
+- **macOS (temporary until reboot):**
+  ```bash
+  sudo chgrp admin /dev/bpf* && sudo chmod g+rw /dev/bpf*
+  ```
+- **Linux (grant capability to virtual environment):**
+  ```bash
+  sudo setcap cap_net_raw,cap_net_admin=eip $(pwd)/.venv/bin/python
+  ```
+
+### Manual Setup
+
+If you prefer to set up your virtual environment manually:
 
 ```bash
 # Create and activate virtual environment
@@ -61,23 +88,20 @@ Features include:
 
 To launch:
 ```bash
-sudo .venv/bin/python main.py --dashboard
+sudo ./run.py --dashboard
 ```
 Navigate to `http://localhost:8080` in your web browser.
 
-
-
-To use this project, you can run the script main.py from the command
-line as root, either interactively:
+To use this project, you can run the script from the command line as root (or standard user if configured above), either interactively:
 
 ```bash
-$ sudo .venv/bin/python main.py
+$ sudo ./run.py
 ```
 
 ...or non-interactively, for scripting and automation:
 
 ```bash
-$ sudo .venv/bin/python main.py --network 192.168.1.0/24
+$ sudo ./run.py --network 192.168.1.0/24
 ```
 
 The network address must be a valid IP address or network, otherwise the
