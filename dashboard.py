@@ -211,9 +211,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+class ReuseTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
 def run_dashboard(port: int = 8080) -> None:
     print(f"Starting web dashboard at http://localhost:{port}")
-    with socketserver.TCPServer(("", port), DashboardHandler) as httpd:
+    with ReuseTCPServer(("", port), DashboardHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
