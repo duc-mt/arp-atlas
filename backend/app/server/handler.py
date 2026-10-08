@@ -134,6 +134,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             }
 
             enrich_devices(devices)
+            
+            gw_ip = None
+            if iface:
+                for route in scapy.conf.route.routes:
+                    if route[0] == 0:
+                        ifc = route[3]
+                        if hasattr(ifc, "name"):
+                            ifc = ifc.name
+                        if ifc == iface:
+                            gw_ip = route[2]
+                            break
+            
+            for d in devices:
+                if gw_ip and d.get("ip") == gw_ip:
+                    d["is_gateway"] = True
+
             if scan_ports:
                 scan_devices_ports(devices)
 
