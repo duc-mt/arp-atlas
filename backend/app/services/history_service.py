@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
+import os
+import tempfile
 import typing
 from typing import Any
 
@@ -52,8 +55,23 @@ def save_scan(
     }
     if stats:
         history[network]["stats"] = stats
-    with open(path, "w") as f:
-        json.dump(history, f, indent=2)
+
+    # Write to a temp file in the same directory and atomically rename it
+    # into place, rather than writing `path` directly. A crash or power
+    # loss mid-write (or two scans racing) can otherwise leave a
+    # truncated/corrupt JSON file - and load_history() treats any
+    # unparseable file as "no history", silently discarding every past
+    # scan, not just the one in progress.
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp_path = tempfile.mkstemp(prefix=".tmp-", suffix=".json", dir=directory)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(history, f, indent=2)
+        os.replace(tmp_path, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.remove(tmp_path)
+        raise
 
 
 def diff_devices(
