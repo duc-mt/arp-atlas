@@ -22,7 +22,38 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Maximum number of addresses a single scan request may expand to (applies
+# to both "start-end" ranges and plain CIDR input). Without a cap, a
+# mistyped or malicious range (e.g. transposed octets) makes the server
+# try to materialize a multi-million-entry list before a single ARP
+# packet goes out - this bounds that to something a LAN sweep can
+# actually finish in reasonable time.
+MAX_RANGE_SIZE = 65536
+
+
 def _get_netmask(iface_name: str) -> int:
+    """Best-effort lookup of an interface's IPv4 prefix length.
+
+    Tries `ip -json addr show` first - iproute2 is the standard tool on
+    current Linux distributions, and `ifconfig`/net-tools is no longer
+    installed by default on several of them (Debian 11+, Ubuntu 20.04+).
+    Falls back to parsing `ifconfig` output for macOS/BSD and older
+    systems, and finally to a hardcoded /24 guess if neither tool is
+    available or parsing fails.
+    """
+    ip_bin = shutil.which("ip")
+    if ip_bin:
+        try:
+            out = subprocess.check_output(  # nosec B603
+                [ip_bin, "-json", "addr", "show", iface_name]
+            ).decode()
+            for entry in json.loads(out):
+                for addr_info in entry.get("addr_info", []):
+                    if addr_info.get("family") == "inet" and "prefixlen" in addr_info:
+                        return int(addr_info["prefixlen"])
+        except Exception as err:
+            logger.debug("`ip addr show` failed for %s: %s", iface_name, err)
+
     try:
         ifconfig_bin = shutil.which("ifconfig") or "/sbin/ifconfig"
         out = subprocess.check_output([ifconfig_bin, iface_name]).decode()  # nosec B603 B607
@@ -35,7 +66,7 @@ def _get_netmask(iface_name: str) -> int:
             mask_int = struct.unpack("!I", socket.inet_aton(mask_str))[0]
             return bin(mask_int).count("1")
     except Exception as err:
-        logger.debug("Failed to determine netmask for %s: %s", iface_name, err)
+        logger.debug("ifconfig fallback failed for %s: %s", iface_name, err)
     return 24
 
 
@@ -53,10 +84,19 @@ def _parse_target(target_input: str) -> tuple[list[str], str]:
         end_obj = ipaddress.IPv4Address(end_ip_str.strip())
         if start_obj > end_obj:
             start_obj, end_obj = end_obj, start_obj
+        range_size = int(end_obj) - int(start_obj) + 1
+        if range_size > MAX_RANGE_SIZE:
+            raise ValueError(
+                f"range too large ({range_size} addresses) - max is {MAX_RANGE_SIZE}"
+            )
         target_ips = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)]
         network_str = f"{start_obj}-{end_obj}"
     else:
         net = ipaddress.ip_network(target_input, strict=False)
+        if net.num_addresses > MAX_RANGE_SIZE:
+            raise ValueError(
+                f"network too large ({net.num_addresses} addresses) - max is {MAX_RANGE_SIZE}"
+            )
         target_ips = [str(ip) for ip in net.hosts()]
         network_str = str(net)
 
