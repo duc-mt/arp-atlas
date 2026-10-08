@@ -13,14 +13,19 @@ from typing import Any
 _FRONTEND_DIR = Path(__file__).resolve().parents[3] / "frontend"
 _DASHBOARD_HTML_PATH = _FRONTEND_DIR / "dashboard.html"
 
-import subprocess
+import subprocess  # nosec B404
 import re
 import socket
 import struct
+import shutil
+import logging
+
+logger = logging.getLogger(__name__)
 
 def _get_netmask(iface_name: str) -> int:
     try:
-        out = subprocess.check_output(["ifconfig", iface_name]).decode()
+        ifconfig_bin = shutil.which("ifconfig") or "/sbin/ifconfig"
+        out = subprocess.check_output([ifconfig_bin, iface_name]).decode()  # nosec B603 B607
         match_hex = re.search(r"netmask\s+(0x[0-9a-fA-F]+)", out)
         if match_hex:
             return bin(int(match_hex.group(1), 16)).count("1")
@@ -29,8 +34,8 @@ def _get_netmask(iface_name: str) -> int:
             mask_str = match_dec.group(1)
             mask_int = struct.unpack("!I", socket.inet_aton(mask_str))[0]
             return bin(mask_int).count("1")
-    except Exception:
-        pass
+    except Exception as err:
+        logger.debug("Failed to determine netmask for %s: %s", iface_name, err)
     return 24
 
 
@@ -45,7 +50,7 @@ def _parse_target(target_input: str) -> tuple[list[str], str]:
     if "-" in target_input:
         start_ip, end_ip = target_input.split("-", 1)
         start_obj = ipaddress.IPv4Address(start_ip.strip())
-        end_obj = ipaddress.IPv4Address(end_ip.strip())
+        end_obj = ipaddress.IPv4Address(end_obj.strip())
         if start_obj > end_obj:
             start_obj, end_obj = end_obj, start_obj
         target_ips = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)]
@@ -118,10 +123,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             for ip in target_ips:
                 if ip in responded_ips:
                     continue
-                route = scapy.conf.route.route(ip)[0]
-                if hasattr(route, "name"):
-                    route = route.name
-                if route != iface:
+                route_res = scapy.conf.route.route(ip)[0]
+                route_name = route_res.name if hasattr(route_res, "name") else str(route_res)
+                if route_name != iface:
                     wrong_iface_count += 1
 
             responded = len(devices)
@@ -137,13 +141,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             
             gw_ip = None
             if iface:
-                for route in scapy.conf.route.routes:
-                    if route[0] == 0:
-                        ifc = route[3]
-                        if hasattr(ifc, "name"):
-                            ifc = ifc.name
-                        if ifc == iface:
-                            gw_ip = route[2]
+                for route_entry in scapy.conf.route.routes:
+                    if route_entry[0] == 0:
+                        ifc_entry = route_entry[3]
+                        ifc_name = ifc_entry.name if hasattr(ifc_entry, "name") else str(ifc_entry)
+                        if ifc_name == iface:
+                            gw_ip = route_entry[2]
                             break
             
             for d in devices:
