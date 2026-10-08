@@ -16,3 +16,10 @@ select = ["F", "E9", "B", "SIM", "RUF"]
 [tool.pytest.ini_options]
 addopts = "--cov=main --cov-report=term-missing"
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true

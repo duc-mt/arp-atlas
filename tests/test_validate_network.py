@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 """Tests for main.validate_network().
 
 Regression coverage for two bugs found during review:
@@ -13,7 +16,6 @@ Regression coverage for two bugs found during review:
    already normalises it down to the containing network correctly.
 """
 
-from __future__ import annotations
 
 import pytest
 

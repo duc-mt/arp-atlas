@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 """Tests for main.run_interactive(): the interactive session.
 
 run_interactive() now prompts three times in the happy path: the
@@ -6,7 +9,6 @@ input() is mocked with a side_effect list matching that order, rather
 than a single fixed return_value.
 """
 
-from __future__ import annotations
 
 from unittest import mock
 
@@ -42,7 +44,7 @@ class TestMainPermissionError:
 
 class TestMainHappyPath:
     def test_valid_network_scans_and_prints_results(self, capsys):
-        devices = [{"ip": "192.168.1.1", "mac": "9c:5a:6b:1e:4f:0c"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "9c:5a:6b:1e:4f:0c"}]
         inputs = iter([" 192.168.1.0/24 ", "n", ""])
         with mock.patch("builtins.input", lambda *a: next(inputs)), \
              mock.patch("main.scan_network", return_value=devices) as mock_scan, \
@@ -82,7 +84,7 @@ class TestMainHappyPath:
 
 class TestPortScanPrompt:
     def test_yes_answer_runs_the_port_scan(self, capsys):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "y", ""])
         with mock.patch("builtins.input", lambda *a: next(inputs)), \
              mock.patch("main.scan_network", return_value=devices), \
@@ -96,7 +98,7 @@ class TestPortScanPrompt:
         mock_scan_ports.assert_called_once_with(devices)
 
     def test_default_no_answer_skips_the_port_scan(self, capsys):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "", ""])
         with mock.patch("builtins.input", lambda *a: next(inputs)), \
              mock.patch("main.scan_network", return_value=devices), \
@@ -112,7 +114,7 @@ class TestPortScanPrompt:
 
 class TestHistoryDiff:
     def test_previous_scan_triggers_a_diff(self, capsys):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         previous = {
             "192.168.1.0/24": {
                 "timestamp": "2024-01-01T00:00:00+00:00",
@@ -135,7 +137,7 @@ class TestHistoryDiff:
         )
 
     def test_no_previous_scan_means_no_diff_output(self, capsys):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "n", ""])
         with mock.patch("builtins.input", lambda *a: next(inputs)), \
              mock.patch("main.scan_network", return_value=devices), \
@@ -151,7 +153,7 @@ class TestHistoryDiff:
 
 class TestExportPrompt:
     def test_blank_answer_skips_export(self, capsys):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "n", ""])
         with mock.patch("builtins.input", lambda *a: next(inputs)), \
              mock.patch("main.scan_network", return_value=devices), \
@@ -166,7 +168,7 @@ class TestExportPrompt:
         assert "exported" not in capsys.readouterr().out
 
     def test_a_path_triggers_export(self, capsys, tmp_path):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         out_path = str(tmp_path / "scan.csv")
         inputs = iter(["192.168.1.0/24", "n", out_path])
         with mock.patch("builtins.input", lambda *a: next(inputs)), \
@@ -182,7 +184,7 @@ class TestExportPrompt:
         assert "exported" in capsys.readouterr().out
 
     def test_export_failure_is_reported_not_raised(self, capsys):
-        devices = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "n", "/no/such/dir/scan.csv"])
         with mock.patch("builtins.input", lambda *a: next(inputs)), \
              mock.patch("main.scan_network", return_value=devices), \
