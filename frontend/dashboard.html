@@ -171,7 +171,15 @@
 
         window.currentData = null;
         window.currentAvailableIps = [];
-        
+
+        // Device fields (hostname, vendor, etc.) come from the network itself -
+        // untrusted input. Always escape before interpolating into innerHTML.
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, (c) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+            }[c]));
+        }
+
         function ipToLong(ip) {
             return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
         }
@@ -336,7 +344,7 @@
             document.getElementById('available-title').innerText = `Available Addresses (${available.length})`;
             const listEl = document.getElementById('available-list');
             const formattedRanges = formatIpRanges(available);
-            listEl.innerHTML = formattedRanges.map(r => `<li>${r}</li>`).join('');
+            listEl.innerHTML = formattedRanges.map(r => `<li>${esc(r)}</li>`).join('');
             document.getElementById('available-modal').showModal();
         }
 
@@ -416,13 +424,13 @@
                         <div>
                             <div class="flex items-center gap-2">
                                 <span class="w-2 h-2 rounded-full ${isHealthy ? 'bg-healthy' : (isWarning ? 'bg-degraded' : 'bg-offline')} animate-pulse"></span>
-                                <h3 class="text-sm font-bold text-text font-mono tracking-tight">${network}</h3>
+                                <h3 class="text-sm font-bold text-text font-mono tracking-tight">${esc(network)}</h3>
                             </div>
                             <p class="text-[11px] text-muted mt-0.5">Last scanned: ${new Date(info.timestamp).toLocaleString()}</p>
                         </div>
                         <div class="flex space-x-2">
-                            <button onclick="exportScanCsv('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-all hover:-translate-y-0.5">Export CSV</button>
-                            <button onclick="showAvailableAddresses('${network}')" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-all hover:-translate-y-0.5">Available Addresses</button>
+                            <button data-action="export-csv" data-network="${esc(network)}" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-all hover:-translate-y-0.5">Export CSV</button>
+                            <button data-action="show-available" data-network="${esc(network)}" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-all hover:-translate-y-0.5">Available Addresses</button>
                         </div>
                     </div>
                     
@@ -458,10 +466,10 @@
                 info.devices.forEach(device => {
                     const isGateway = device.is_gateway ? '<span class="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-500 border border-sky-500/30" title="Default Gateway">GW</span>' : '';
                     const isRandom = device.is_randomized ? '<span class="ml-1.5 inline-flex items-center rounded-full bg-panel-alt text-muted text-[10px] px-2 py-0.5 border border-border font-mono">Random</span>' : '';
-                    const vendor = device.vendor || '-';
-                    const hostname = device.hostname || '-';
-                    const ports = (device.open_ports || []).join(', ') || '-';
-                    const role = device.role || '-';
+                    const vendor = esc(device.vendor || '-');
+                    const hostname = esc(device.hostname || '-');
+                    const ports = esc((device.open_ports || []).join(', ') || '-');
+                    const role = esc(device.role || '-');
                     const roleBadge = role !== '-' 
                         ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-panel-alt text-accent border border-border/80">${role}</span>`
                         : '<span class="text-muted text-xs">-</span>';
@@ -469,8 +477,8 @@
                     const rowClass = device.is_gateway ? 'bg-sky-500/5 hover:bg-sky-500/10 border-b border-border transition-colors' : 'border-b border-border last:border-0 hover:bg-panel-alt/50 transition-colors';
                     
                     html += `<tr class="${rowClass}">
-                        <td class="py-2.5 pr-3 font-mono text-xs font-semibold ${device.is_gateway ? 'text-accent' : 'text-text'}">${device.ip} ${isGateway}</td>
-                        <td class="py-2.5 pr-3 font-mono text-xs text-text">${device.mac} ${isRandom}</td>
+                        <td class="py-2.5 pr-3 font-mono text-xs font-semibold ${device.is_gateway ? 'text-accent' : 'text-text'}">${esc(device.ip)} ${isGateway}</td>
+                        <td class="py-2.5 pr-3 font-mono text-xs text-text">${esc(device.mac)} ${isRandom}</td>
                         <td class="py-2.5 pr-3 text-xs text-muted">${vendor}</td>
                         <td class="py-2.5 pr-3 text-xs text-muted font-mono">${hostname}</td>
                         <td class="py-2.5 pr-3 font-mono text-xs text-muted">${ports}</td>
@@ -488,7 +496,14 @@
             }
             
             container.innerHTML = finalHtml;
-            
+
+            container.querySelectorAll('[data-action="export-csv"]').forEach((btn) => {
+                btn.addEventListener('click', () => exportScanCsv(btn.dataset.network));
+            });
+            container.querySelectorAll('[data-action="show-available"]').forEach((btn) => {
+                btn.addEventListener('click', () => showAvailableAddresses(btn.dataset.network));
+            });
+
             window.currentCharts = [];
             chartsToInit.forEach(c => {
                 const isLight = document.documentElement.classList.contains('light');
