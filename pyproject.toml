@@ -1,5 +1,5 @@
 [project]
-name = "network-hunter"
+name = "arp-atlas"
 version = "1.0.0"
 description = "A local-network ARP scanner using scapy."
 readme = "README.md"

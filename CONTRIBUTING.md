@@ -1,4 +1,4 @@
-# Contributing to network-hunter
+# Contributing to arp-atlas
 
 Thank you for your interest in contributing!
 
