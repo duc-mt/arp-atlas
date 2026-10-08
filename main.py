@@ -411,7 +411,7 @@ def classify_device(vendor: str | None, open_ports: list[int]) -> str:
         else:
             scores["router/switch"] += 2
 
-    best_category = max(scores, key=scores.get)
+    best_category = max(scores, key=scores.__getitem__)
     best_score = scores[best_category]
 
     if best_score == 0:
