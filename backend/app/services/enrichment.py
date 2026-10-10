@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   enrichment.py
-Description:   Device enrichment — vendor (OUI) and hostname (reverse DNS) lookups.
+Description:   Source module enrichment.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   test_scan_network.py
-Description:   Tests for scan_network().  scapy.srp() actually sending packets requires raw-socket access (root), so these tests mock it out entirely and check only the parsing of its return value - the part of scan_network() that's ordinary Python logic.
+Description:   Source module test_scan_network.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

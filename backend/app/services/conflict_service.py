@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   conflict_service.py
-Description:   IP conflict detection — finds IPs that answered from multiple MACs.
+Description:   Source module conflict_service.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

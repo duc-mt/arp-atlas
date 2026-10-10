@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   export_service.py
-Description:   CSV and JSON export for scan results.
+Description:   Source module export_service.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

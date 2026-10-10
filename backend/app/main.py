@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   main.py
-Description:   Backend package entry point — exposes top-level convenience imports.
+Description:   Source module main.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

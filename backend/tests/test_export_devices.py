@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   test_export_devices.py
-Description:   Implementation and logic for test_export_devices.
+Description:   Source module test_export_devices.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

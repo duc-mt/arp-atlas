@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   main.py
-Description:   ARP Atlas command-line interface.  Entry point: ``sudo python -m cli.arp_atlas_cli.main``  or the ``arp-atlas`` console script installed via cli/pyproject.toml.
+Description:   Source module main.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

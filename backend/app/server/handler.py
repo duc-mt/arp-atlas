@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   handler.py
-Description:   HTTP request handler for the ARP Atlas web dashboard.
+Description:   Source module handler.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

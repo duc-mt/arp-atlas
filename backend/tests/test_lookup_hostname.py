@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   test_lookup_hostname.py
-Description:   Tests for lookup_hostname().  socket.getnameinfo() is always mocked - these tests never perform a real DNS lookup.
+Description:   Source module test_lookup_hostname.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   test_find_ip_conflicts.py
-Description:   Tests for find_ip_conflicts().  Two different MACs both answering for the same IP in one scan is the classic signature of a misconfigured static IP or ARP spoofing.
+Description:   Source module test_find_ip_conflicts.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

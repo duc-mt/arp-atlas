@@ -1,18 +1,19 @@
+"""
+==============================================================================
+Module Name:   main.py
+Description:   Source module main.py.
+Author:        Mai Tan Duc <ducmai.network@gmail.com>
+Created:       2026-10-10
+Version:       1.0.0
+License:       MIT
+==============================================================================
+Usage:         python3 main.py [options]
+Notes:         Requires Python 3.8+
+==============================================================================
+"""
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# =============================================================================
-#
-#        FILE:  main.py   (backward-compatibility shim)
-#      AUTHOR:  Mai Tan Duc <ducmai.network@gmail.com>
-#
-# DESCRIPTION:  Thin proxy — keeps `sudo python main.py` and
-#               `import main` in existing tests/scripts working while
-#               the real implementation now lives under backend/ and cli/.
-#
-# =============================================================================
-# ruff: noqa: F401  (re-exports used by tests and legacy callers)
-
-
 from __future__ import annotations
 
 from backend.app.config import COMMON_PORTS, DEFAULT_TIMEOUT, HISTORY_FILE

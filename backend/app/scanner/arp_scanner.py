@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   arp_scanner.py
-Description:   ARP network scanner — validates network strings and performs ARP sweeps.
+Description:   Source module arp_scanner.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

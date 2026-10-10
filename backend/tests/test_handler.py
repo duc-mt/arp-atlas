@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   test_handler.py
-Description:   Tests for backend.app.server.handler - previously 0% covered.  _parse_target() and _get_netmask() are pure functions and tested directly. The POST/GET endpoints are tested against a real server bound to an ephemeral localhost port (scapy.srp() mocked out, same convention as the rest of the suite) rather than by poking at BaseHTTPRequestHandler internals directly.
+Description:   Source module test_handler.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   test_lookup_vendor.py
-Description:   Tests for lookup_vendor().  Uses scapy's own bundled IEEE manufacturer database, so these are offline and deterministic - no network call, no new dependency.
+Description:   Source module test_lookup_vendor.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0

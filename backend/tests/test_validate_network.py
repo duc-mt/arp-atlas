@@ -1,8 +1,7 @@
-
 """
 ==============================================================================
 Module Name:   test_validate_network.py
-Description:   Tests for validate_network().  Regression coverage for two bugs found during review:  1. The original code fed the raw, un-stripped user input straight into    ipaddress.ip_network(), so a pasted address with a trailing newline    or leading space - a very common paste artifact - was rejected as    invalid even though it's a perfectly valid address once trimmed. 2. ip_network() defaults to strict=True, which rejects any address    with host bits set relative to its prefix - e.g. "192.168.1.5/24",    a natural way to type "scan the subnet this host is on" - even    though the intent is unambiguous and scapy's own address expansion    already normalises it down to the containing network correctly.
+Description:   Source module test_validate_network.py.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0
