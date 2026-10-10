@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   test_main.py
@@ -11,7 +12,6 @@ Usage:         python3 test_main.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
-from __future__ import annotations
 
 import typing
 """Tests for run_interactive(): the interactive session.

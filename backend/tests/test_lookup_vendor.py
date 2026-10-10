@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   test_lookup_vendor.py
@@ -11,7 +12,6 @@ Usage:         python3 test_lookup_vendor.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
-from __future__ import annotations
 
 """Tests for lookup_vendor().
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   history_service.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """Scan history persistence and device diff utilities."""
 
-from __future__ import annotations
 
 import contextlib
 import datetime

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   test_enrich_devices.py
@@ -11,7 +12,6 @@ Usage:         python3 test_enrich_devices.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
-from __future__ import annotations
 
 import typing
 

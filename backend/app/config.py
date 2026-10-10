@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   config.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """Shared constants and configuration for arp-atlas backend."""
 
-from __future__ import annotations
 
 # Default ARP timeout (seconds)
 DEFAULT_TIMEOUT = 1.0

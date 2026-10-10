@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   test_validate_network.py
@@ -11,7 +12,6 @@ Usage:         python3 test_validate_network.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
-from __future__ import annotations
 
 """Tests for validate_network().
 

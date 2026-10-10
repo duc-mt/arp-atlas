@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   export_service.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """CSV and JSON export for scan results."""
 
-from __future__ import annotations
 
 import csv
 import json

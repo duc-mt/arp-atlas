@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   main.py
@@ -17,7 +18,6 @@ Entry point: ``sudo python -m cli.arp_atlas_cli.main``  or the
 ``arp-atlas`` console script installed via cli/pyproject.toml.
 """
 
-from __future__ import annotations
 
 import argparse
 import json

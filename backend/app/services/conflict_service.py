@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   conflict_service.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """IP conflict detection — finds IPs that answered from multiple MACs."""
 
-from __future__ import annotations
 
 import collections
 from typing import Any

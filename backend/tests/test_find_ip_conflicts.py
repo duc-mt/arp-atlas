@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   test_find_ip_conflicts.py
@@ -11,7 +12,6 @@ Usage:         python3 test_find_ip_conflicts.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
-from __future__ import annotations
 
 """Tests for find_ip_conflicts().
 

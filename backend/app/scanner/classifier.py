@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   classifier.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """Port scanner and device role classifier."""
 
-from __future__ import annotations
 
 import concurrent.futures
 import socket

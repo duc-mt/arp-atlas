@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   handler.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """HTTP request handler for the ARP Atlas web dashboard."""
 
-from __future__ import annotations
 
 import json
 import os

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   enrichment.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """Device enrichment — vendor (OUI) and hostname (reverse DNS) lookups."""
 
-from __future__ import annotations
 
 import asyncio
 import socket

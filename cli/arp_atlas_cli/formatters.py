@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   formatters.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """Rich console formatters — print scan results, diffs and errors."""
 
-from __future__ import annotations
 
 from typing import Any
 

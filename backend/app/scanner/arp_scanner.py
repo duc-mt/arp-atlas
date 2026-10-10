@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   arp_scanner.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """ARP network scanner — validates network strings and performs ARP sweeps."""
 
-from __future__ import annotations
 
 import ipaddress
 from typing import Any

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 # =============================================================================
 #
 #        FILE:  main.py   (backward-compatibility shim)
@@ -12,7 +13,6 @@
 # =============================================================================
 # ruff: noqa: F401  (re-exports used by tests and legacy callers)
 
-from __future__ import annotations
 
 from backend.app.config import COMMON_PORTS, DEFAULT_TIMEOUT, HISTORY_FILE
 from backend.app.scanner.arp_scanner import scan_network, validate_network

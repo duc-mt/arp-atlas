@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   server.py
@@ -13,7 +14,6 @@ Notes:         Requires Python 3.8+
 """
 """Dashboard server entry point."""
 
-from __future__ import annotations
 
 from backend.app.server.handler import DashboardHandler, ReuseTCPServer
 

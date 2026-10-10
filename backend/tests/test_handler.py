@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ==============================================================================
 Module Name:   test_handler.py
@@ -11,7 +12,6 @@ Usage:         python3 test_handler.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
-from __future__ import annotations
 
 """Tests for backend.app.server.handler - previously 0% covered.
 
