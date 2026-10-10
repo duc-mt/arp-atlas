@@ -1,3 +1,16 @@
+"""
+==============================================================================
+Module Name:   classifier.py
+Description:   Implementation and logic for classifier.
+Author:        Mai Tan Duc <ducmai.network@gmail.com>
+Created:       2026-10-10
+Version:       1.0.0
+License:       MIT
+==============================================================================
+Usage:         python3 classifier.py [options]
+Notes:         Requires Python 3.8+
+==============================================================================
+"""
 """Port scanner and device role classifier."""
 
 from __future__ import annotations

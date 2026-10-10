@@ -1,3 +1,16 @@
+"""
+==============================================================================
+Module Name:   test_handler.py
+Description:   Implementation and logic for test_handler.
+Author:        Mai Tan Duc <ducmai.network@gmail.com>
+Created:       2026-10-10
+Version:       1.0.0
+License:       MIT
+==============================================================================
+Usage:         python3 test_handler.py [options]
+Notes:         Requires Python 3.8+
+==============================================================================
+"""
 from __future__ import annotations
 
 """Tests for backend.app.server.handler - previously 0% covered.
