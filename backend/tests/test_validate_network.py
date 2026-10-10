@@ -15,7 +15,6 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
-
 import pytest
 
 from backend.app.scanner.arp_scanner import validate_network

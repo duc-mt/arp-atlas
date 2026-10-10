@@ -15,7 +15,6 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
-
 import concurrent.futures
 import socket
 from typing import Any

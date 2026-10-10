@@ -15,7 +15,6 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
-
 from unittest import mock
 
 import scapy.all as scapy

@@ -15,7 +15,6 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
-
 from backend.app.server.handler import DashboardHandler, ReuseTCPServer
 
 

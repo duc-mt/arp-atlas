@@ -15,7 +15,6 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
-
 from backend.app.config import COMMON_PORTS, DEFAULT_TIMEOUT, HISTORY_FILE
 from backend.app.scanner.arp_scanner import scan_network, validate_network
 from backend.app.scanner.classifier import classify_device, scan_device_ports, scan_devices_ports

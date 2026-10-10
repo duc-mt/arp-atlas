@@ -15,7 +15,6 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
-
 from backend.app.services.enrichment import lookup_vendor
 
 
