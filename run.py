@@ -18,6 +18,7 @@ import sys
 import subprocess
 import platform
 from pathlib import Path
+import contextlib
 
 
 def check_python_version():
@@ -32,10 +33,7 @@ def is_stale(stamp_file: Path, source_files: list[Path]) -> bool:
     if not stamp_file.exists():
         return True
     stamp_time = stamp_file.stat().st_mtime
-    for sf in source_files:
-        if sf.exists() and sf.stat().st_mtime > stamp_time:
-            return True
-    return False
+    return any(sf.exists() and sf.stat().st_mtime > stamp_time for sf in source_files)
 
 
 def mark_fresh(stamp_file: Path):
@@ -83,10 +81,8 @@ def main():
 
     # Execution
     args = sys.argv[1:]
-    try:
-        subprocess.run([str(python_exe), "main.py"] + args)
-    except KeyboardInterrupt:
-        pass
+    with contextlib.suppress(KeyboardInterrupt):
+        subprocess.run([str(python_exe), "main.py", *args])
 
 
 if __name__ == "__main__":
