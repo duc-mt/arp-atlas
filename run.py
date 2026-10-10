@@ -13,12 +13,12 @@ Notes:         Requires Python 3.8+
 ==============================================================================
 """
 
-import os
-import sys
-import subprocess
-import platform
-from pathlib import Path
 import contextlib
+import os
+import platform
+import subprocess
+import sys
+from pathlib import Path
 
 
 def check_python_version():

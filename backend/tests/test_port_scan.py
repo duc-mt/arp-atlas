@@ -15,13 +15,12 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
-import typing
-
 import socket
 import threading
+import typing
 from unittest import mock
 
-from backend.app.scanner.classifier import scan_device_ports, classify_device, scan_devices_ports
+from backend.app.scanner.classifier import classify_device, scan_device_ports, scan_devices_ports
 
 
 def start_local_listener():

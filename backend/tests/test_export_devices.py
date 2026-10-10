@@ -15,15 +15,13 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
-import typing
-
 import csv
 import json
+import typing
 
 import pytest
 
 from backend.app.services.export_service import export_devices
-
 
 DEVICES: list[dict[str, typing.Any]] = [
     {

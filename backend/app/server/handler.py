@@ -15,10 +15,10 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
+import http.server
 import json
 import os
 import socketserver
-import http.server
 from pathlib import Path
 from typing import Any
 
@@ -26,12 +26,12 @@ from typing import Any
 _FRONTEND_DIR = Path(__file__).resolve().parents[3] / "frontend"
 _DASHBOARD_HTML_PATH = _FRONTEND_DIR / "dashboard.html"
 
-import subprocess  # nosec B404
+import logging
 import re
+import shutil
 import socket
 import struct
-import shutil
-import logging
+import subprocess  # nosec B404
 
 logger = logging.getLogger(__name__)
 
@@ -142,11 +142,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def _handle_scan(self) -> None:
         import scapy.all as scapy  # type: ignore[import-untyped]
 
-        from backend.app.scanner.arp_scanner import scan_network
-        from backend.app.services.enrichment import enrich_devices
-        from backend.app.scanner.classifier import scan_devices_ports
-        from backend.app.services.history_service import save_scan
         from backend.app.config import HISTORY_FILE
+        from backend.app.scanner.arp_scanner import scan_network
+        from backend.app.scanner.classifier import scan_devices_ports
+        from backend.app.services.enrichment import enrich_devices
+        from backend.app.services.history_service import save_scan
 
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length)

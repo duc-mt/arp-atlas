@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import typing
 
-from backend.app.services.history_service import load_history, save_scan, diff_devices
+from backend.app.services.history_service import diff_devices, load_history, save_scan
 from cli.arp_atlas_cli.formatters import print_diff
 
 

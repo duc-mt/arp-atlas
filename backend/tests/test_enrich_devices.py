@@ -16,7 +16,6 @@ Notes:         Requires Python 3.8+
 from __future__ import annotations
 
 import typing
-
 from unittest import mock
 
 from backend.app.services.enrichment import enrich_devices
