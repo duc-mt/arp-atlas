@@ -3,7 +3,7 @@ from __future__ import annotations
 """
 ==============================================================================
 Module Name:   conflict_service.py
-Description:   Implementation and logic for conflict_service.
+Description:   IP conflict detection — finds IPs that answered from multiple MACs.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0
@@ -13,7 +13,6 @@ Usage:         python3 conflict_service.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
-"""IP conflict detection — finds IPs that answered from multiple MACs."""
 
 
 import collections

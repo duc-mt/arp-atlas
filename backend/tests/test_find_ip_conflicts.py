@@ -3,7 +3,7 @@ from __future__ import annotations
 """
 ==============================================================================
 Module Name:   test_find_ip_conflicts.py
-Description:   Implementation and logic for test_find_ip_conflicts.
+Description:   Tests for find_ip_conflicts().  Two different MACs both answering for the same IP in one scan is the classic signature of a misconfigured static IP or ARP spoofing.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0
@@ -12,12 +12,6 @@ License:       MIT
 Usage:         python3 test_find_ip_conflicts.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
-"""
-
-"""Tests for find_ip_conflicts().
-
-Two different MACs both answering for the same IP in one scan is the
-classic signature of a misconfigured static IP or ARP spoofing.
 """
 
 

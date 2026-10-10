@@ -3,7 +3,7 @@ from __future__ import annotations
 """
 ==============================================================================
 Module Name:   test_scan_network.py
-Description:   Implementation and logic for test_scan_network.
+Description:   Tests for scan_network().  scapy.srp() actually sending packets requires raw-socket access (root), so these tests mock it out entirely and check only the parsing of its return value - the part of scan_network() that's ordinary Python logic.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0
@@ -12,13 +12,6 @@ License:       MIT
 Usage:         python3 test_scan_network.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
-"""
-
-"""Tests for scan_network().
-
-scapy.srp() actually sending packets requires raw-socket access (root),
-so these tests mock it out entirely and check only the parsing of its
-return value - the part of scan_network() that's ordinary Python logic.
 """
 
 

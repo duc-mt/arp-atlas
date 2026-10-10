@@ -3,7 +3,7 @@ from __future__ import annotations
 """
 ==============================================================================
 Module Name:   main.py
-Description:   Implementation and logic for main.
+Description:   Backend package entry point — exposes top-level convenience imports.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0
@@ -13,7 +13,6 @@ Usage:         python3 main.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
-"""Backend package entry point — exposes top-level convenience imports."""
 
 
 from backend.app.config import COMMON_PORTS, DEFAULT_TIMEOUT, HISTORY_FILE

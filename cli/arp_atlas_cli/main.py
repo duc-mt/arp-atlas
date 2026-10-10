@@ -3,7 +3,7 @@ from __future__ import annotations
 """
 ==============================================================================
 Module Name:   main.py
-Description:   Implementation and logic for main.
+Description:   ARP Atlas command-line interface.  Entry point: ``sudo python -m cli.arp_atlas_cli.main``  or the ``arp-atlas`` console script installed via cli/pyproject.toml.
 Author:        Mai Tan Duc <ducmai.network@gmail.com>
 Created:       2026-10-10
 Version:       1.0.0
@@ -12,11 +12,6 @@ License:       MIT
 Usage:         python3 main.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
-"""
-"""ARP Atlas command-line interface.
-
-Entry point: ``sudo python -m cli.arp_atlas_cli.main``  or the
-``arp-atlas`` console script installed via cli/pyproject.toml.
 """
 
 
