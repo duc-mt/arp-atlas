@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   formatters.py
@@ -38,7 +39,7 @@ def print_results(devices: list[dict[str, Any]]) -> None:
         row = [device["ip"], mac_display, vendor, hostname]
         if show_ports:
             open_ports = device.get("open_ports") or []
-            ports_str = (",".join(str(port) for port in open_ports) if open_ports else "-")
+            ports_str = ",".join(str(port) for port in open_ports) if open_ports else "-"
             row += [ports_str, device.get("role") or "-"]
         print("\t\t".join(row))
 

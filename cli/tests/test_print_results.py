@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   test_print_results.py
@@ -59,10 +60,14 @@ class TestPrintResults:
         assert "192.168.1.1" in out
 
     def test_role_and_ports_columns_omitted_without_a_port_scan(self, capsys):
-        devices: list[dict[str, typing.Any]] = [{
-            "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
-            "vendor": None, "hostname": None,
-        }]
+        devices: list[dict[str, typing.Any]] = [
+            {
+                "ip": "192.168.1.1",
+                "mac": "aa:aa:aa:aa:aa:aa",
+                "vendor": None,
+                "hostname": None,
+            }
+        ]
         print_results(devices)
 
         out = capsys.readouterr().out
@@ -70,11 +75,16 @@ class TestPrintResults:
         assert "Open Ports" not in out
 
     def test_role_and_ports_columns_shown_after_a_port_scan(self, capsys):
-        devices: list[dict[str, typing.Any]] = [{
-            "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
-            "vendor": None, "hostname": None,
-            "open_ports": [22, 80], "role": "server",
-        }]
+        devices: list[dict[str, typing.Any]] = [
+            {
+                "ip": "192.168.1.1",
+                "mac": "aa:aa:aa:aa:aa:aa",
+                "vendor": None,
+                "hostname": None,
+                "open_ports": [22, 80],
+                "role": "server",
+            }
+        ]
         print_results(devices)
 
         out = capsys.readouterr().out
@@ -83,22 +93,23 @@ class TestPrintResults:
         assert "22,80" in out
         assert "server" in out
 
-    def test_no_open_ports_shows_a_placeholder_not_an_empty_cell(
-        self, capsys
-    ):
-        devices: list[dict[str, typing.Any]] = [{
-            "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
-            "vendor": None, "hostname": None,
-            "open_ports": [], "role": "unknown",
-        }]
+    def test_no_open_ports_shows_a_placeholder_not_an_empty_cell(self, capsys):
+        devices: list[dict[str, typing.Any]] = [
+            {
+                "ip": "192.168.1.1",
+                "mac": "aa:aa:aa:aa:aa:aa",
+                "vendor": None,
+                "hostname": None,
+                "open_ports": [],
+                "role": "unknown",
+            }
+        ]
         print_results(devices)
 
         out = capsys.readouterr().out
         assert "192.168.1.1\t\taa:aa:aa:aa:aa:aa\t\t-\t\t-\t\t-\t\tunknown" in out
 
-    def test_empty_list_prints_a_friendly_message_not_a_bare_header(
-        self, capsys
-    ):
+    def test_empty_list_prints_a_friendly_message_not_a_bare_header(self, capsys):
         """Regression test: previously an empty result set silently
         printed just the header row with no rows underneath, giving no
         clear indication that the scan found nothing."""

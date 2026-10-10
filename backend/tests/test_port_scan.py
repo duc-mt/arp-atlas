@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   test_port_scan.py
@@ -48,9 +49,7 @@ class TestScanDevicePorts:
     def test_finds_a_genuinely_open_port(self):
         srv, port = start_local_listener()
         try:
-            open_ports = scan_device_ports(
-                "127.0.0.1", ports=[port], timeout=0.3
-            )
+            open_ports = scan_device_ports("127.0.0.1", ports=[port], timeout=0.3)
             assert open_ports == [port]
         finally:
             srv.close()
@@ -58,27 +57,21 @@ class TestScanDevicePorts:
     def test_closed_port_is_not_reported(self):
         # Port 1 is reserved and essentially guaranteed closed/refused
         # on a normal system without root running something unusual.
-        open_ports = scan_device_ports(
-            "127.0.0.1", ports=[1], timeout=0.3
-        )
+        open_ports = scan_device_ports("127.0.0.1", ports=[1], timeout=0.3)
         assert open_ports == []
 
     def test_a_connection_error_is_treated_as_closed_not_a_crash(self):
         with mock.patch("socket.socket") as mock_socket_cls:
-            mock_socket_cls.return_value.__enter__.return_value.connect_ex.side_effect = (
-                OSError("network unreachable")
+            mock_socket_cls.return_value.__enter__.return_value.connect_ex.side_effect = OSError(
+                "network unreachable"
             )
-            open_ports = scan_device_ports(
-                "10.255.255.255", ports=[22], timeout=0.1
-            )
+            open_ports = scan_device_ports("10.255.255.255", ports=[22], timeout=0.1)
         assert open_ports == []
 
     def test_only_probes_the_given_ports(self):
         srv, port = start_local_listener()
         try:
-            open_ports = scan_device_ports(
-                "127.0.0.1", ports=[1, port, 2], timeout=0.3
-            )
+            open_ports = scan_device_ports("127.0.0.1", ports=[1, port, 2], timeout=0.3)
             assert open_ports == [port]
         finally:
             srv.close()
@@ -120,19 +113,20 @@ class TestScanDevicesPorts:
     def test_adds_open_ports_and_role_to_each_device(self):
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
 
-        with mock.patch(
-            "backend.app.scanner.classifier.scan_device_ports", return_value=[22, 21]
-        ):
+        with mock.patch("backend.app.scanner.classifier.scan_device_ports", return_value=[22, 21]):
             result = scan_devices_ports(devices)
 
         assert result[0]["open_ports"] == [22, 21]
         assert result[0]["role"] == "server"
 
     def test_uses_vendor_from_the_device_for_classification(self):
-        devices: list[dict[str, typing.Any]] = [{
-            "ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa",
-            "vendor": "Cisco Systems",
-        }]
+        devices: list[dict[str, typing.Any]] = [
+            {
+                "ip": "192.168.1.1",
+                "mac": "aa:aa:aa:aa:aa:aa",
+                "vendor": "Cisco Systems",
+            }
+        ]
 
         with mock.patch("backend.app.scanner.classifier.scan_device_ports", return_value=[]):
             result = scan_devices_ports(devices)

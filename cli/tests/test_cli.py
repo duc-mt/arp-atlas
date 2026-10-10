@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   test_cli.py
@@ -15,6 +16,7 @@ Notes:         Requires Python 3.8+
 
 import typing
 from pathlib import Path
+
 """Tests for the non-interactive CLI mode.
 
 Exercises cli.arp_atlas_cli.main.main() with a mocked sys.argv, which is how a
@@ -54,10 +56,12 @@ class TestNetworkRunsCli:
 
     def test_valid_network_scans_and_prints(self, capsys: pytest.CaptureFixture) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
-        with mock.patch(f"{_M}.scan_network", return_value=devices), \
-             mock.patch(f"{_M}.enrich_devices"), \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"):
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=devices),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
             exit_code = run_main(["--network", "192.168.1.0/24"])
 
         assert exit_code == 0
@@ -78,10 +82,12 @@ class TestNetworkRunsCli:
             {"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"},
             {"ip": "192.168.1.1", "mac": "bb:bb:bb:bb:bb:bb"},
         ]
-        with mock.patch(f"{_M}.scan_network", return_value=devices), \
-             mock.patch(f"{_M}.enrich_devices"), \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"):
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=devices),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
             run_main(["--network", "192.168.1.0/24"])
 
         assert "WARNING" in capsys.readouterr().out
@@ -89,17 +95,21 @@ class TestNetworkRunsCli:
 
 class TestTimeoutFlag:
     def test_default_timeout_is_used_when_not_given(self) -> None:
-        with mock.patch(f"{_M}.scan_network", return_value=[]) as mock_scan, \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"):
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]) as mock_scan,
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
             run_main(["--network", "192.168.1.0/24"])
 
         mock_scan.assert_called_once_with("192.168.1.0/24", timeout=DEFAULT_TIMEOUT)
 
     def test_custom_timeout_is_passed_through(self) -> None:
-        with mock.patch(f"{_M}.scan_network", return_value=[]) as mock_scan, \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"):
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]) as mock_scan,
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
             run_main(["--network", "192.168.1.0/24", "--timeout", "3.5"])
 
         mock_scan.assert_called_once_with("192.168.1.0/24", timeout=3.5)
@@ -107,21 +117,25 @@ class TestTimeoutFlag:
 
 class TestScanPortsFlag:
     def test_not_run_by_default(self) -> None:
-        with mock.patch(f"{_M}.scan_network", return_value=[]), \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"), \
-             mock.patch(f"{_M}.scan_devices_ports") as mock_scan_ports:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+            mock.patch(f"{_M}.scan_devices_ports") as mock_scan_ports,
+        ):
             run_main(["--network", "192.168.1.0/24"])
 
         mock_scan_ports.assert_not_called()
 
     def test_run_when_flag_given(self) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
-        with mock.patch(f"{_M}.scan_network", return_value=devices), \
-             mock.patch(f"{_M}.enrich_devices"), \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"), \
-             mock.patch(f"{_M}.scan_devices_ports") as mock_scan_ports:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=devices),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+            mock.patch(f"{_M}.scan_devices_ports") as mock_scan_ports,
+        ):
             run_main(["--network", "192.168.1.0/24", "--scan-ports"])
 
         mock_scan_ports.assert_called_once_with(devices)
@@ -129,44 +143,58 @@ class TestScanPortsFlag:
 
 class TestHistoryFlags:
     def test_diff_and_save_run_by_default(self) -> None:
-        with mock.patch(f"{_M}.scan_network", return_value=[]), \
-             mock.patch(f"{_M}.load_history", return_value={}) as mock_load, \
-             mock.patch(f"{_M}.save_scan") as mock_save:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]),
+            mock.patch(f"{_M}.load_history", return_value={}) as mock_load,
+            mock.patch(f"{_M}.save_scan") as mock_save,
+        ):
             run_main(["--network", "192.168.1.0/24"])
 
         mock_load.assert_called_once_with(HISTORY_FILE)
         mock_save.assert_called_once_with(HISTORY_FILE, "192.168.1.0/24", [])
 
     def test_no_history_flag_skips_both(self) -> None:
-        with mock.patch(f"{_M}.scan_network", return_value=[]), \
-             mock.patch(f"{_M}.load_history") as mock_load, \
-             mock.patch(f"{_M}.save_scan") as mock_save:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]),
+            mock.patch(f"{_M}.load_history") as mock_load,
+            mock.patch(f"{_M}.save_scan") as mock_save,
+        ):
             run_main(["--network", "192.168.1.0/24", "--no-history"])
 
         mock_load.assert_not_called()
         mock_save.assert_not_called()
 
     def test_custom_history_file_is_used(self) -> None:
-        with mock.patch(f"{_M}.scan_network", return_value=[]), \
-             mock.patch(f"{_M}.load_history", return_value={}) as mock_load, \
-             mock.patch(f"{_M}.save_scan") as mock_save:
-            run_main([
-                "--network", "192.168.1.0/24",
-                "--history-file", "custom.json",
-            ])
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]),
+            mock.patch(f"{_M}.load_history", return_value={}) as mock_load,
+            mock.patch(f"{_M}.save_scan") as mock_save,
+        ):
+            run_main(
+                [
+                    "--network",
+                    "192.168.1.0/24",
+                    "--history-file",
+                    "custom.json",
+                ]
+            )
 
         mock_load.assert_called_once_with("custom.json")
         mock_save.assert_called_once_with("custom.json", "192.168.1.0/24", [])
 
-    def test_diff_is_printed_when_a_previous_scan_exists(self, capsys: pytest.CaptureFixture) -> None:
+    def test_diff_is_printed_when_a_previous_scan_exists(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         previous = {
             "192.168.1.0/24": {"timestamp": "x", "devices": []},
         }
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
-        with mock.patch(f"{_M}.scan_network", return_value=devices), \
-             mock.patch(f"{_M}.enrich_devices"), \
-             mock.patch(f"{_M}.load_history", return_value=previous), \
-             mock.patch(f"{_M}.save_scan"):
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=devices),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.load_history", return_value=previous),
+            mock.patch(f"{_M}.save_scan"),
+        ):
             run_main(["--network", "192.168.1.0/24"])
 
         assert "New devices since last scan" in capsys.readouterr().out
@@ -175,35 +203,45 @@ class TestHistoryFlags:
 class TestOutputFlag:
     def test_exports_to_the_given_path(self, tmp_path: Path) -> None:
         out_path = str(tmp_path / "scan.csv")
-        with mock.patch(f"{_M}.scan_network", return_value=[]), \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"):
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
             run_main(["--network", "192.168.1.0/24", "--output", out_path])
 
         assert (tmp_path / "scan.csv").exists()
 
     def test_format_flag_overrides_extension_inference(self, tmp_path: Path) -> None:
         out_path = str(tmp_path / "scan.dat")
-        with mock.patch(f"{_M}.scan_network", return_value=[]), \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"):
-            exit_code = run_main([
-                "--network", "192.168.1.0/24",
-                "--output", out_path, "--format", "json",
-            ])
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
+            exit_code = run_main(
+                [
+                    "--network",
+                    "192.168.1.0/24",
+                    "--output",
+                    out_path,
+                    "--format",
+                    "json",
+                ]
+            )
 
         assert exit_code == 0
         content = (tmp_path / "scan.dat").read_text()
         assert content.strip().startswith("[")  # valid JSON array
 
-    def test_unrecognised_extension_without_format_is_an_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_unrecognised_extension_without_format_is_an_error(self, tmp_path: Path) -> None:
         out_path = str(tmp_path / "scan.txt")
-        with mock.patch(f"{_M}.scan_network", return_value=[]), \
-             mock.patch(f"{_M}.load_history", return_value={}), \
-             mock.patch(f"{_M}.save_scan"), \
-             pytest.raises(SystemExit) as exc_info:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+            pytest.raises(SystemExit) as exc_info,
+        ):
             run_main(["--network", "192.168.1.0/24", "--output", out_path])
 
         assert exc_info.value.code == 2

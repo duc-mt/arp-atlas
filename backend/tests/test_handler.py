@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   test_handler.py
@@ -75,10 +76,21 @@ class TestGetNetmask:
         """iproute2's `ip` is the primary path - it's present on
         current Linux distros that no longer ship ifconfig."""
         ip_json_output = json.dumps(
-            [{"addr_info": [{"family": "inet6", "prefixlen": 64}, {"family": "inet", "prefixlen": 27}]}]
+            [
+                {
+                    "addr_info": [
+                        {"family": "inet6", "prefixlen": 64},
+                        {"family": "inet", "prefixlen": 27},
+                    ]
+                }
+            ]
         ).encode()
-        with mock.patch("backend.app.server.handler.shutil.which", return_value="/usr/sbin/ip"), \
-             mock.patch("backend.app.server.handler.subprocess.check_output", return_value=ip_json_output):
+        with (
+            mock.patch("backend.app.server.handler.shutil.which", return_value="/usr/sbin/ip"),
+            mock.patch(
+                "backend.app.server.handler.subprocess.check_output", return_value=ip_json_output
+            ),
+        ):
             assert _get_netmask("eth0") == 27
 
     def test_falls_back_to_ifconfig_decimal_mask_when_ip_missing(self):
@@ -89,8 +101,12 @@ class TestGetNetmask:
         def which(name: str) -> str | None:
             return None if name == "ip" else "/sbin/ifconfig"
 
-        with mock.patch("backend.app.server.handler.shutil.which", side_effect=which), \
-             mock.patch("backend.app.server.handler.subprocess.check_output", return_value=ifconfig_output):
+        with (
+            mock.patch("backend.app.server.handler.shutil.which", side_effect=which),
+            mock.patch(
+                "backend.app.server.handler.subprocess.check_output", return_value=ifconfig_output
+            ),
+        ):
             assert _get_netmask("eth0") == 24
 
     def test_falls_back_to_ifconfig_hex_mask(self):
@@ -99,13 +115,21 @@ class TestGetNetmask:
         def which(name: str) -> str | None:
             return None if name == "ip" else "/sbin/ifconfig"
 
-        with mock.patch("backend.app.server.handler.shutil.which", side_effect=which), \
-             mock.patch("backend.app.server.handler.subprocess.check_output", return_value=ifconfig_output):
+        with (
+            mock.patch("backend.app.server.handler.shutil.which", side_effect=which),
+            mock.patch(
+                "backend.app.server.handler.subprocess.check_output", return_value=ifconfig_output
+            ),
+        ):
             assert _get_netmask("eth0") == 24
 
     def test_defaults_to_24_when_nothing_works(self):
-        with mock.patch("backend.app.server.handler.shutil.which", return_value=None), \
-             mock.patch("backend.app.server.handler.subprocess.check_output", side_effect=FileNotFoundError):
+        with (
+            mock.patch("backend.app.server.handler.shutil.which", return_value=None),
+            mock.patch(
+                "backend.app.server.handler.subprocess.check_output", side_effect=FileNotFoundError
+            ),
+        ):
             assert _get_netmask("eth0") == 24
 
 
@@ -150,8 +174,10 @@ class TestScanEndpoint:
     def test_successful_scan_is_persisted_to_history(self, live_server, tmp_path):
         host, port = live_server
         history_path = tmp_path / "scan_history.json"
-        with mock.patch("backend.app.config.HISTORY_FILE", str(history_path)), \
-             mock.patch("scapy.all.srp", return_value=([], [])):
+        with (
+            mock.patch("backend.app.config.HISTORY_FILE", str(history_path)),
+            mock.patch("scapy.all.srp", return_value=([], [])),
+        ):
             status, payload = _post_json(host, port, "/api/scan", {"target": "192.168.50.0/30"})
 
         assert status == 200
@@ -219,8 +245,10 @@ class TestDashboardPage:
         fake_iface.name = "eth0"
         fake_iface.ip = "192.168.1.5"
 
-        with mock.patch("scapy.all.get_working_ifaces", return_value=[fake_iface]), \
-             mock.patch("backend.app.server.handler._get_netmask", return_value=24):
+        with (
+            mock.patch("scapy.all.get_working_ifaces", return_value=[fake_iface]),
+            mock.patch("backend.app.server.handler._get_netmask", return_value=24),
+        ):
             conn = http.client.HTTPConnection(host, port, timeout=5)
             conn.request("GET", "/")
             resp = conn.getresponse()

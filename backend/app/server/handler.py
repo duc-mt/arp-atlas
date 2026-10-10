@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   handler.py
@@ -73,7 +74,9 @@ def _get_netmask(iface_name: str) -> int:
         match_hex = re.search(r"netmask\s+(0x[0-9a-fA-F]+)", out)
         if match_hex:
             return bin(int(match_hex.group(1), 16)).count("1")
-        match_dec = re.search(r"(?:netmask|Mask:)\s*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", out, re.IGNORECASE)
+        match_dec = re.search(
+            r"(?:netmask|Mask:)\s*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", out, re.IGNORECASE
+        )
         if match_dec:
             mask_str = match_dec.group(1)
             mask_int = struct.unpack("!I", socket.inet_aton(mask_str))[0]
@@ -99,10 +102,10 @@ def _parse_target(target_input: str) -> tuple[list[str], str]:
             start_obj, end_obj = end_obj, start_obj
         range_size = int(end_obj) - int(start_obj) + 1
         if range_size > MAX_RANGE_SIZE:
-            raise ValueError(
-                f"range too large ({range_size} addresses) - max is {MAX_RANGE_SIZE}"
-            )
-        target_ips = [str(ipaddress.IPv4Address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)]
+            raise ValueError(f"range too large ({range_size} addresses) - max is {MAX_RANGE_SIZE}")
+        target_ips = [
+            str(ipaddress.IPv4Address(ip)) for ip in range(int(start_obj), int(end_obj) + 1)
+        ]
         network_str = f"{start_obj}-{end_obj}"
     else:
         net = ipaddress.ip_network(target_input, strict=False)
@@ -191,7 +194,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             }
 
             enrich_devices(devices)
-            
+
             gw_ip = None
             if iface:
                 for route_entry in scapy.conf.route.routes:
@@ -201,7 +204,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         if ifc_name == iface:
                             gw_ip = route_entry[2]
                             break
-            
+
             for d in devices:
                 if gw_ip and d.get("ip") == gw_ip:
                     d["is_gateway"] = True
@@ -262,6 +265,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         iface_options = ""
         import ipaddress
+
         for i, iface in enumerate(valid_ifaces):
             selected = ' selected="selected"' if i == 0 else ""
             subnet_str = ""
@@ -272,9 +276,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     subnet_str = str(net)
                 except Exception:
                     subnet_str = f"{iface.ip}/{mask}"
-            iface_options += (
-                f'<option value="{iface.name}" data-subnet="{subnet_str}"{selected}>{iface.name} ({iface.ip})</option>'
-            )
+            iface_options += f'<option value="{iface.name}" data-subnet="{subnet_str}"{selected}>{iface.name} ({iface.ip})</option>'
 
         html = DASHBOARD_HTML.replace("<!-- IFACE_OPTIONS -->", iface_options)
         body = html.encode("utf-8")

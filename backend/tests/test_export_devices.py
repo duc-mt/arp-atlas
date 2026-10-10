@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   test_export_devices.py
@@ -25,12 +26,16 @@ from backend.app.services.export_service import export_devices
 
 DEVICES: list[dict[str, typing.Any]] = [
     {
-        "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff",
-        "vendor": "Acme Inc.", "hostname": "router.local",
+        "ip": "192.168.1.1",
+        "mac": "aa:bb:cc:dd:ee:ff",
+        "vendor": "Acme Inc.",
+        "hostname": "router.local",
     },
     {
-        "ip": "192.168.1.2", "mac": "11:22:33:44:55:66",
-        "vendor": None, "hostname": None,
+        "ip": "192.168.1.2",
+        "mac": "11:22:33:44:55:66",
+        "vendor": None,
+        "hostname": None,
     },
 ]
 
@@ -45,9 +50,7 @@ class TestExportDevicesCsv:
         assert rows[0]["ip"] == "192.168.1.1"
         assert rows[0]["vendor"] == "Acme Inc."
 
-    def test_none_values_become_empty_strings_not_the_word_none(
-        self, tmp_path
-    ):
+    def test_none_values_become_empty_strings_not_the_word_none(self, tmp_path):
         path = str(tmp_path / "scan.csv")
         export_devices(DEVICES, path)
 
@@ -67,11 +70,16 @@ class TestExportDevicesCsv:
         assert header == ["ip", "mac", "vendor", "hostname"]
 
     def test_open_ports_are_joined_with_semicolons(self, tmp_path):
-        devices: list[dict[str, typing.Any]] = [{
-            "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff",
-            "vendor": None, "hostname": None,
-            "open_ports": [22, 80, 443], "role": "server",
-        }]
+        devices: list[dict[str, typing.Any]] = [
+            {
+                "ip": "192.168.1.1",
+                "mac": "aa:bb:cc:dd:ee:ff",
+                "vendor": None,
+                "hostname": None,
+                "open_ports": [22, 80, 443],
+                "role": "server",
+            }
+        ]
         path = str(tmp_path / "scan.csv")
         export_devices(devices, path)
 
@@ -138,29 +146,32 @@ class TestExportDevicesCsvFormulaInjection:
     """
 
     def test_formula_prefixed_hostname_is_neutralised(self, tmp_path):
-        devices: list[dict[str, typing.Any]] = [{
-            "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff",
-            "vendor": "Acme Inc.",
-            "hostname": '=HYPERLINK("http://evil.example/leak","click")',
-        }]
+        devices: list[dict[str, typing.Any]] = [
+            {
+                "ip": "192.168.1.1",
+                "mac": "aa:bb:cc:dd:ee:ff",
+                "vendor": "Acme Inc.",
+                "hostname": '=HYPERLINK("http://evil.example/leak","click")',
+            }
+        ]
         path = str(tmp_path / "scan.csv")
         export_devices(devices, path)
 
         with open(path, newline="") as f:
             rows = list(csv.DictReader(f))
-        assert rows[0]["hostname"] == (
-            '\'=HYPERLINK("http://evil.example/leak","click")'
-        )
+        assert rows[0]["hostname"] == ('\'=HYPERLINK("http://evil.example/leak","click")')
         assert not rows[0]["hostname"].startswith("=")
 
     @pytest.mark.parametrize("trigger", ["=", "+", "-", "@", "\t", "\r"])
-    def test_each_formula_trigger_character_is_neutralised(
-        self, tmp_path, trigger
-    ):
-        devices: list[dict[str, typing.Any]] = [{
-            "ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff",
-            "vendor": None, "hostname": f"{trigger}SUM(1,1)",
-        }]
+    def test_each_formula_trigger_character_is_neutralised(self, tmp_path, trigger):
+        devices: list[dict[str, typing.Any]] = [
+            {
+                "ip": "192.168.1.1",
+                "mac": "aa:bb:cc:dd:ee:ff",
+                "vendor": None,
+                "hostname": f"{trigger}SUM(1,1)",
+            }
+        ]
         path = str(tmp_path / "scan.csv")
         export_devices(devices, path)
 

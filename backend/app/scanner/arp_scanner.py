@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   arp_scanner.py
@@ -87,9 +88,7 @@ def scan_network(
     broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")  # type: ignore[attr-defined]
     arp_broadcast = broadcast / arp_request
 
-    answered, _unanswered = scapy.srp(
-        arp_broadcast, timeout=timeout, verbose=False, iface=iface
-    )
+    answered, _unanswered = scapy.srp(arp_broadcast, timeout=timeout, verbose=False, iface=iface)
 
     devices = []
     for packet in answered:

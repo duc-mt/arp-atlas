@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   test_history.py
@@ -52,22 +53,16 @@ class TestSaveScan:
         save_scan(path, "10.0.0.0/24", [{"ip": "2", "mac": "b"}])
 
         history = load_history(path)
-        assert history["192.168.1.0/24"]["devices"] == [
-            {"ip": "1", "mac": "a"}
-        ]
+        assert history["192.168.1.0/24"]["devices"] == [{"ip": "1", "mac": "a"}]
         assert history["10.0.0.0/24"]["devices"] == [{"ip": "2", "mac": "b"}]
 
-    def test_saving_the_same_network_again_replaces_its_entry(
-        self, tmp_path
-    ):
+    def test_saving_the_same_network_again_replaces_its_entry(self, tmp_path):
         path = str(tmp_path / "scan_history.json")
         save_scan(path, "192.168.1.0/24", [{"ip": "1", "mac": "a"}])
         save_scan(path, "192.168.1.0/24", [{"ip": "2", "mac": "b"}])
 
         history = load_history(path)
-        assert history["192.168.1.0/24"]["devices"] == [
-            {"ip": "2", "mac": "b"}
-        ]
+        assert history["192.168.1.0/24"]["devices"] == [{"ip": "2", "mac": "b"}]
 
 
 class TestDiffDevices:
@@ -134,7 +129,8 @@ class TestPrintDiff:
     def test_prints_new_devices(self, capsys):
         diff = {
             "new": [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}],
-            "missing": [], "ip_changed": [],
+            "missing": [],
+            "ip_changed": [],
         }
         print_diff(diff)
         out = capsys.readouterr().out
@@ -154,10 +150,10 @@ class TestPrintDiff:
 
     def test_prints_ip_changes_with_before_and_after(self, capsys):
         diff = {
-            "new": [], "missing": [],
+            "new": [],
+            "missing": [],
             "ip_changed": [
-                ({"ip": "192.168.1.99", "mac": "aa:aa:aa:aa:aa:aa"},
-                 "192.168.1.1"),
+                ({"ip": "192.168.1.99", "mac": "aa:aa:aa:aa:aa:aa"}, "192.168.1.1"),
             ],
         }
         print_diff(diff)

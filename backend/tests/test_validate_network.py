@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   test_validate_network.py
@@ -74,7 +75,5 @@ class TestValidateNetwork:
     )
     def test_invalid_inputs(self, invalid_network: str) -> None:
         """Test that garbage strings, empty inputs, or out-of-range IPs correctly raise ValueErrors."""
-        with pytest.raises(
-            ValueError, match="does not appear to be an IPv4 or IPv6 network"
-        ):
+        with pytest.raises(ValueError, match="does not appear to be an IPv4 or IPv6 network"):
             validate_network(invalid_network)

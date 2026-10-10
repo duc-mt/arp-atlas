@@ -12,16 +12,21 @@ Usage:         python3 run.py [options]
 Notes:         Requires Python 3.8+
 ==============================================================================
 """
+
 import os
 import sys
 import subprocess
 import platform
 from pathlib import Path
 
+
 def check_python_version():
     if sys.version_info < (3, 10):
-        print(f"Error: Python 3.10 or higher is required. You are running Python {sys.version_info.major}.{sys.version_info.minor}.")
+        print(
+            f"Error: Python 3.10 or higher is required. You are running Python {sys.version_info.major}.{sys.version_info.minor}."
+        )
         sys.exit(1)
+
 
 def is_stale(stamp_file: Path, source_files: list[Path]) -> bool:
     if not stamp_file.exists():
@@ -32,9 +37,11 @@ def is_stale(stamp_file: Path, source_files: list[Path]) -> bool:
             return True
     return False
 
+
 def mark_fresh(stamp_file: Path):
     stamp_file.parent.mkdir(parents=True, exist_ok=True)
     stamp_file.touch()
+
 
 def main():
     check_python_version()
@@ -64,8 +71,10 @@ def main():
         print("Checking and installing Python dependencies...")
         if not venv_dir.exists():
             subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
-            
-        subprocess.run([str(python_exe), "-m", "pip", "install", "--upgrade", "pip", "-q"], check=True)
+
+        subprocess.run(
+            [str(python_exe), "-m", "pip", "install", "--upgrade", "pip", "-q"], check=True
+        )
         if reqs_txt.exists():
             subprocess.run([str(pip_exe), "install", "-r", str(reqs_txt)], check=True)
         if cli_reqs.exists():
@@ -78,6 +87,7 @@ def main():
         subprocess.run([str(python_exe), "main.py"] + args)
     except KeyboardInterrupt:
         pass
+
 
 if __name__ == "__main__":
     main()

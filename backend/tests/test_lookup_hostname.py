@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   test_lookup_hostname.py
@@ -36,9 +37,7 @@ class TestLookupHostname:
             assert lookup_hostname("192.168.1.50") == "printer.local"
 
     def test_no_ptr_record_returns_none(self):
-        with mock.patch(
-            "socket.getnameinfo", side_effect=socket.gaierror("no PTR")
-        ):
+        with mock.patch("socket.getnameinfo", side_effect=socket.gaierror("no PTR")):
             assert lookup_hostname("192.168.1.50") is None
 
     def test_timeout_returns_none_not_an_exception(self):
@@ -53,6 +52,6 @@ class TestLookupHostname:
             elif hasattr(coro, "cancel"):
                 coro.cancel()
             raise asyncio.TimeoutError()
-            
+
         with mock.patch("asyncio.wait_for", side_effect=_mock_wait_for):
             assert lookup_hostname("192.168.1.50") is None

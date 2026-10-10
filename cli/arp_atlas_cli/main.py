@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 ==============================================================================
 Module Name:   main.py
@@ -165,8 +166,7 @@ def run_interactive() -> int:
         network = validate_network(network)
     except ValueError:
         print_error(
-            f"{network} is not a valid network address. "
-            "Please enter a valid IP address or network."
+            f"{network} is not a valid network address. Please enter a valid IP address or network."
         )
         return 1
 
@@ -180,10 +180,14 @@ def run_interactive() -> int:
 
     enrich_devices(devices)
 
-    scan_ports_answer = input(
-        "\nAlso probe common ports on each device and guess its role? "
-        "This takes longer. [y/N]: "
-    ).strip().lower()
+    scan_ports_answer = (
+        input(
+            "\nAlso probe common ports on each device and guess its role? "
+            "This takes longer. [y/N]: "
+        )
+        .strip()
+        .lower()
+    )
     if scan_ports_answer in ("y", "yes"):
         scan_devices_ports(devices)
 
