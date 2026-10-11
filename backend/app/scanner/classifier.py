@@ -43,7 +43,7 @@ def _tcp_syn_scan(ip: str, ports: list[int], timeout: float) -> list[int]:
         if response is None or not response.haslayer(scapy.TCP):  # type: ignore[attr-defined]
             continue
         tcp_layer = response.getlayer(scapy.TCP)  # type: ignore[attr-defined]
-        if tcp_layer.flags != 0x12:  # SYN+ACK only - anything else isn't "open"
+        if tcp_layer is None or tcp_layer.flags != 0x12:  # SYN+ACK only - anything else isn't "open"
             continue
         open_ports.append(port)
         rst = scapy.IP(dst=ip) / scapy.TCP(  # type: ignore[attr-defined]

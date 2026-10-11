@@ -344,8 +344,12 @@ async def _query_dns_like(
             if remaining <= 0:
                 return None
             result: asyncio.Future[bytes] = loop.create_future()
+
+            def _protocol_factory() -> _DatagramResponseProtocol:
+                return _DatagramResponseProtocol(result)
+
             transport, _ = await loop.create_datagram_endpoint(
-                lambda result=result: _DatagramResponseProtocol(result),
+                _protocol_factory,
                 family=socket.AF_INET,
                 allow_broadcast=True,
             )
