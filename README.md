@@ -15,7 +15,7 @@
 - [Example](#example)
 - [Testing](#testing)
 - [Development](#development)
-- [Known Limitations](#known-limitations)
+- [Review History](#review-history)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -263,7 +263,13 @@ CI runs on every pull request and push via GitHub Actions
 3.10-3.12, and `bandit` + `pip-audit` security scans. A weekly CodeQL
 scan and Dependabot are also configured.
 
-# Known Limitations
+# Review History
+
+(Previously titled "Known Limitations," which read as a list of open
+problems - every item below, including the two address-parsing bugs, is
+already fixed; see `validate_network()` in
+`backend/app/scanner/arp_scanner.py` and
+`backend/tests/test_validate_network.py`.)
 
 A round of review found and fixed several issues:
 
