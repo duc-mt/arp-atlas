@@ -13,6 +13,7 @@ extend-exclude = [".agents"]
 
 [tool.ruff.lint]
 select = ["F", "E9", "B", "SIM", "RUF"]
+per-file-ignores = { "main.py" = ["F401"], "dashboard.py" = ["F401"] }
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=term-missing"
