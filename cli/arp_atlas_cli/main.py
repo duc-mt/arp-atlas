@@ -89,6 +89,34 @@ def check_npcap_on_windows() -> None:
             sys.exit(1)
 
 
+def check_privileges() -> None:
+    """Ensure process has required privileges to send raw packets before launching."""
+    if sys.platform == "win32":
+        return
+
+    if os.geteuid() == 0:
+        return
+
+    # Check if raw socket capability or BPF read/write permission is present
+    has_raw_access = False
+    try:
+        import socket
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+        s.close()
+        has_raw_access = True
+    except (PermissionError, OSError):
+        has_raw_access = False
+
+    if not has_raw_access:
+        print("\n[!] ERROR: Insufficient privileges to send raw network packets.", file=sys.stderr)
+        print("[!] ARP Atlas requires root privileges (or configured capabilities/bpf access).", file=sys.stderr)
+        print("[!] Please re-run with sudo:\n", file=sys.stderr)
+        cmd_args = " ".join(sys.argv)
+        print(f"    sudo {cmd_args}\n", file=sys.stderr)
+        sys.exit(1)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Scan a local network for devices via ARP, identifying "
@@ -254,6 +282,7 @@ def main() -> int:
     check_npcap_on_windows()
     parser = build_arg_parser()
     args = parser.parse_args()
+    check_privileges()
 
     if args.dashboard:
         from backend.app.server.server import run_dashboard

@@ -32,7 +32,10 @@ from cli.arp_atlas_cli.main import main
 
 
 def run_main(argv: list[str]) -> int:
-    with mock.patch("sys.argv", ["arp-atlas", *argv]):
+    with (
+        mock.patch("sys.argv", ["arp-atlas", *argv]),
+        mock.patch("cli.arp_atlas_cli.main.check_privileges"),
+    ):
         return main()
 
 
@@ -245,3 +248,45 @@ class TestOutputFlag:
             run_main(["--network", "192.168.1.0/24", "--output", out_path])
 
         assert exc_info.value.code == 2
+
+
+class TestCheckPrivileges:
+    def test_windows_skips_privilege_check(self) -> None:
+        from cli.arp_atlas_cli.main import check_privileges
+
+        with mock.patch("sys.platform", "win32"):
+            # Should not raise SystemExit
+            check_privileges()
+
+    def test_root_user_passes(self) -> None:
+        from cli.arp_atlas_cli.main import check_privileges
+
+        with (
+            mock.patch("sys.platform", "linux"),
+            mock.patch("os.geteuid", return_value=0),
+        ):
+            check_privileges()
+
+    def test_non_root_without_raw_socket_fails(self) -> None:
+        from cli.arp_atlas_cli.main import check_privileges
+
+        with (
+            mock.patch("sys.platform", "linux"),
+            mock.patch("os.geteuid", return_value=1000),
+            mock.patch("socket.socket", side_effect=PermissionError("Permission denied")),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            check_privileges()
+        assert exc_info.value.code == 1
+
+    def test_non_root_with_raw_socket_passes(self) -> None:
+        from cli.arp_atlas_cli.main import check_privileges
+
+        mock_sock = mock.MagicMock()
+        with (
+            mock.patch("sys.platform", "linux"),
+            mock.patch("os.geteuid", return_value=1000),
+            mock.patch("socket.socket", return_value=mock_sock),
+        ):
+            check_privileges()
+        mock_sock.close.assert_called_once()

@@ -9,6 +9,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Check for raw socket / root privileges on Unix-like systems and elevate via sudo
+if [ "$(uname -s)" != "MINGW"* ] && [ "$(uname -s)" != "CYGWIN"* ]; then
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "[!] ARP Atlas requires root privileges (sudo) to send raw ARP packets."
+        echo "    Re-running with sudo..."
+        exec sudo "$0" "$@"
+    fi
+fi
+
 # 1. If virtual environment exists, use its Python directly
 if [ -x ".venv/bin/python" ]; then
     exec .venv/bin/python run.py "$@"
