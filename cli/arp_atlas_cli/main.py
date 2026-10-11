@@ -151,6 +151,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "Adds noticeable time per device, so this is opt-in.",
     )
     parser.add_argument(
+        "--syn-scan",
+        action="store_true",
+        help="With --scan-ports, use a half-open TCP SYN probe per port instead of a "
+        "full connect() - lower overhead, and the target's own application-layer "
+        "logging never sees a connection since the handshake is torn down before "
+        "it completes. Needs the same raw-socket privileges as the ARP sweep.",
+    )
+    parser.add_argument(
+        "--gentle-scan",
+        action="store_true",
+        help="Pace the ARP sweep: one host at a time, in randomized order, with a "
+        "small random delay between each, instead of one broadcast burst. "
+        "Friendlier to switches/monitoring tuned to flag a broadcast burst or a "
+        "sequential sweep; takes much longer on large ranges.",
+    )
+    parser.add_argument(
         "--history-file",
         default=HISTORY_FILE,
         help=f"Where to persist scan history for diffing against future scans "
@@ -242,7 +258,7 @@ def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     except ValueError:
         parser.error(f"{args.network!r} is not a valid network address")
 
-    devices = _scan_or_none(network, timeout=args.timeout)
+    devices = _scan_or_none(network, timeout=args.timeout, gentle=args.gentle_scan)
     if devices is None:
         return 1
 
@@ -253,7 +269,7 @@ def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     enrich_devices(devices)
 
     if args.scan_ports:
-        scan_devices_ports(devices)
+        scan_devices_ports(devices, method="syn" if args.syn_scan else "connect")
 
     if args.stream_jsonl:
         for device in devices:

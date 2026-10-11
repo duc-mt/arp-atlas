@@ -53,3 +53,79 @@ class TestEnrichDevices:
             result = enrich_devices(devices)
 
         assert result is devices
+
+
+class TestEnrichDevicesMultiProtocolHostnames:
+    """Covers the hostname-resolution upgrade: reverse DNS, mDNS, LLMNR
+    and NBNS now all race for each device, so these mock at the
+    individual-protocol level (rather than mocking
+    `_lookup_hostname_async` wholesale, as the tests above do) to prove
+    the mDNS and NBNS legs are actually wired in and that whichever one
+    answers becomes the device's hostname.
+    """
+
+    def test_mdns_result_is_used_when_reverse_dns_has_nothing(self):
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.30", "mac": "aa:aa:aa:aa:aa:aa"}]
+
+        with (
+            mock.patch("backend.app.services.enrichment.lookup_vendor", return_value=None),
+            mock.patch("backend.app.services.enrichment._reverse_dns_lookup", return_value=None),
+            mock.patch(
+                "backend.app.services.enrichment._mdns_lookup",
+                return_value="nas-01.local",
+            ),
+            mock.patch("backend.app.services.enrichment._llmnr_lookup", return_value=None),
+            mock.patch("backend.app.services.enrichment._nbns_lookup", return_value=None),
+        ):
+            result = enrich_devices(devices)
+
+        assert result[0]["hostname"] == "nas-01.local"
+
+    def test_netbios_result_is_used_when_nothing_else_answers(self):
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.31", "mac": "bb:bb:bb:bb:bb:bb"}]
+
+        with (
+            mock.patch("backend.app.services.enrichment.lookup_vendor", return_value=None),
+            mock.patch("backend.app.services.enrichment._reverse_dns_lookup", return_value=None),
+            mock.patch("backend.app.services.enrichment._mdns_lookup", return_value=None),
+            mock.patch("backend.app.services.enrichment._llmnr_lookup", return_value=None),
+            mock.patch(
+                "backend.app.services.enrichment._nbns_lookup",
+                return_value="DESKTOP-ABC123",
+            ),
+        ):
+            result = enrich_devices(devices)
+
+        assert result[0]["hostname"] == "DESKTOP-ABC123"
+
+    def test_each_device_gets_the_right_protocol_result_independently(self):
+        devices: list[dict[str, typing.Any]] = [
+            {"ip": "192.168.1.1", "mac": "10:5f:02:00:00:01"},  # resolves via mDNS
+            {"ip": "192.168.1.2", "mac": "aa:aa:aa:aa:aa:aa"},  # resolves via NBNS
+            {"ip": "192.168.1.3", "mac": "bb:bb:bb:bb:bb:bb"},  # resolves via nothing
+        ]
+
+        with (
+            mock.patch(
+                "backend.app.services.enrichment._reverse_dns_lookup",
+                side_effect=[None, None, None],
+            ),
+            mock.patch(
+                "backend.app.services.enrichment._mdns_lookup",
+                side_effect=["router.local", None, None],
+            ),
+            mock.patch(
+                "backend.app.services.enrichment._llmnr_lookup",
+                side_effect=[None, None, None],
+            ),
+            mock.patch(
+                "backend.app.services.enrichment._nbns_lookup",
+                side_effect=[None, "WIN-FILESERVER", None],
+            ),
+        ):
+            result = enrich_devices(devices)
+
+        assert result[0]["vendor"] == "Ruijie Networks Co.,LTD"  # custom OUI db, same upgrade
+        assert result[0]["hostname"] == "router.local"
+        assert result[1]["hostname"] == "WIN-FILESERVER"
+        assert result[2]["hostname"] is None

@@ -14,6 +14,7 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
+from typing import Any
 from unittest import mock
 
 import scapy.all as scapy
@@ -73,3 +74,72 @@ class TestScanNetwork:
             scan_network("192.168.1.0/24", timeout=5.0)
 
         assert mock_srp.call_args.kwargs["timeout"] == 5.0
+
+    def test_default_mode_sends_one_broadcast_for_the_whole_range(self):
+        with mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp:
+            scan_network("192.168.1.0/24")  # gentle=False by default
+
+        mock_srp.assert_called_once()
+
+
+def _probed_ips(mock_srp: mock.Mock) -> list[str]:
+    """The pdst of each ARP request scan_network() handed to srp(),
+    in call order."""
+    arp_layer: Any = scapy.ARP  # type: ignore[attr-defined]
+    return [call.args[0][arp_layer].pdst for call in mock_srp.call_args_list]
+
+
+class TestScanNetworkGentleMode:
+    """gentle=True: one host at a time, shuffled order, jittered delay -
+    see scan_network()'s docstring for why."""
+
+    def test_probes_each_host_individually_not_the_whole_range_at_once(self):
+        with mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp:
+            scan_network("192.168.1.0/30", gentle=True)  # /30 => 2 usable hosts
+
+        assert mock_srp.call_count == 2
+        assert set(_probed_ips(mock_srp)) == {"192.168.1.1", "192.168.1.2"}
+
+    def test_collects_replies_across_the_separate_per_host_calls(self):
+        answered_1 = [fake_answered_packet("192.168.1.1", "aa:aa:aa:aa:aa:aa")]
+        answered_2 = [fake_answered_packet("192.168.1.2", "bb:bb:bb:bb:bb:bb")]
+        with mock.patch("scapy.all.srp", side_effect=[(answered_1, []), (answered_2, [])]):
+            devices = scan_network("192.168.1.0/30", gentle=True)
+
+        assert devices == [
+            {"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"},
+            {"ip": "192.168.1.2", "mac": "bb:bb:bb:bb:bb:bb"},
+        ]
+
+    def test_order_is_shuffled_not_sequential(self):
+        # Replace the shuffle with a deterministic reversal so the test
+        # isn't flaky, while still proving the natural .1/.2/.3/... order
+        # was changed before probing started.
+        with (
+            mock.patch("random.shuffle", side_effect=lambda lst: lst.reverse()),
+            mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp,
+        ):
+            scan_network("192.168.1.0/29", gentle=True)  # /29 => 6 usable hosts
+
+        probed_in_order = _probed_ips(mock_srp)
+        assert probed_in_order[0] == "192.168.1.6"  # reversed order => last host probed first
+
+    def test_sleeps_between_hosts_with_a_jittered_not_fixed_delay(self):
+        with (
+            mock.patch("scapy.all.srp", return_value=([], [])),
+            mock.patch("time.sleep") as mock_sleep,
+            mock.patch("random.uniform", return_value=0.02) as mock_uniform,
+        ):
+            scan_network("192.168.1.0/30", gentle=True, jitter_range=(0.01, 0.05))
+
+        # /30 => 2 hosts => exactly one gap between them, drawn from the
+        # given jitter range rather than a hardcoded constant.
+        mock_sleep.assert_called_once_with(0.02)
+        mock_uniform.assert_called_once_with(0.01, 0.05)
+
+    def test_a_pre_expanded_host_list_is_used_as_is(self):
+        targets = ["10.0.0.5", "10.0.0.9"]
+        with mock.patch("scapy.all.srp", return_value=([], [])) as mock_srp:
+            scan_network(targets, gentle=True)
+
+        assert set(_probed_ips(mock_srp)) == set(targets)

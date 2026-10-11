@@ -105,7 +105,7 @@ class TestTimeoutFlag:
         ):
             run_main(["--network", "192.168.1.0/24"])
 
-        mock_scan.assert_called_once_with("192.168.1.0/24", timeout=DEFAULT_TIMEOUT)
+        mock_scan.assert_called_once_with("192.168.1.0/24", timeout=DEFAULT_TIMEOUT, gentle=False)
 
     def test_custom_timeout_is_passed_through(self) -> None:
         with (
@@ -115,7 +115,29 @@ class TestTimeoutFlag:
         ):
             run_main(["--network", "192.168.1.0/24", "--timeout", "3.5"])
 
-        mock_scan.assert_called_once_with("192.168.1.0/24", timeout=3.5)
+        mock_scan.assert_called_once_with("192.168.1.0/24", timeout=3.5, gentle=False)
+
+
+class TestGentleScanFlag:
+    def test_not_enabled_by_default(self) -> None:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]) as mock_scan,
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
+            run_main(["--network", "192.168.1.0/24"])
+
+        assert mock_scan.call_args.kwargs["gentle"] is False
+
+    def test_enabled_by_flag(self) -> None:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]) as mock_scan,
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
+            run_main(["--network", "192.168.1.0/24", "--gentle-scan"])
+
+        assert mock_scan.call_args.kwargs["gentle"] is True
 
 
 class TestScanPortsFlag:
@@ -141,7 +163,33 @@ class TestScanPortsFlag:
         ):
             run_main(["--network", "192.168.1.0/24", "--scan-ports"])
 
-        mock_scan_ports.assert_called_once_with(devices)
+        mock_scan_ports.assert_called_once_with(devices, method="connect")
+
+    def test_syn_scan_flag_selects_the_syn_method(self) -> None:
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=devices),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+            mock.patch(f"{_M}.scan_devices_ports") as mock_scan_ports,
+        ):
+            run_main(["--network", "192.168.1.0/24", "--scan-ports", "--syn-scan"])
+
+        mock_scan_ports.assert_called_once_with(devices, method="syn")
+
+    def test_syn_scan_flag_without_scan_ports_does_nothing(self) -> None:
+        """--syn-scan only matters alongside --scan-ports; on its own it
+        shouldn't make scan_devices_ports run."""
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=[]),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+            mock.patch(f"{_M}.scan_devices_ports") as mock_scan_ports,
+        ):
+            run_main(["--network", "192.168.1.0/24", "--syn-scan"])
+
+        mock_scan_ports.assert_not_called()
 
 
 class TestHistoryFlags:

@@ -351,3 +351,53 @@ original architecture review and roadmap:
    and a real per-port connection timeout, this meaningfully slows down a
    scan of many devices, unlike everything else in this list.
 
+## New since then: fresher vendor data + multi-protocol hostname resolution
+
+Both of `enrich_devices()`'s fields had a quiet failure mode that showed up
+as a plain "-" in the dashboard far more often than it should have:
+
+- **Vendor lookups only knew what scapy shipped with.**
+  `scapy.conf.manufdb` is a bundled snapshot of the IEEE registry, only
+  refreshed when scapy itself is upgraded - any OUI allocated since then
+  (e.g. `10:5F:02`, registered to Ruijie Networks in 2022) came back as a
+  miss indistinguishable from "not a real OUI". `lookup_vendor()` now
+  checks a small cached copy of Wireshark's own `manuf` database first
+  (`backend/app/data/manuf.gz`, loaded once per process) and only falls
+  back to scapy's bundled database if that also misses - no new runtime
+  dependency, no network call on the hot path. Run
+  `scripts/update-manuf-db.sh` (needs network access) whenever you want
+  to refresh that cache from Wireshark's upstream file.
+- **Hostname resolution only tried unicast reverse DNS.** That depends on
+  the LAN's DNS server having a PTR record for every DHCP lease, which
+  most home/office networks never configure - so it silently resolved
+  almost nothing. `lookup_hostname()` now races reverse DNS, mDNS
+  (`224.0.0.251:5353` - Apple/Linux/Avahi/IoT/printers), LLMNR
+  (`224.0.0.252:5355` - Windows), and NBNS (`UDP/137` NBSTAT - Windows,
+  Samba/NAS shares) concurrently for each IP and takes whichever answers
+  first, each bounded by a 0.4-0.6s per-protocol timeout so a handful of
+  silent devices can't stall a scan.
+
+## New since then: a gentler ARP sweep and a SYN port-scan option
+
+Two opt-in flags for networks that are sensitive to how a scan looks on the
+wire - a lab reproducing what a detection rule should catch, or production
+switches tuned to flag either pattern:
+
+- **`--gentle-scan`** (`scan_network(..., gentle=True)`) probes hosts one at
+  a time, in randomized order, with a small random delay between each
+  (`GENTLE_SCAN_JITTER` in `config.py`), instead of the default single
+  broadcast covering the whole range. Avoids putting 254 ARP requests on the
+  wire at once, at the cost of a scan that takes roughly
+  `host_count * (timeout + jitter)` instead of one shared timeout window.
+- **`--syn-scan`** (`scan_device_ports(..., method="syn")`) does a half-open
+  TCP SYN probe per port instead of a full `connect()` - the same technique
+  nmap's default privileged scan uses: send a SYN, and on a SYN+ACK tear the
+  attempt down ourselves with a RST before the handshake ever completes. Only
+  takes effect alongside `--scan-ports`; needs the same raw-socket privileges
+  the ARP sweep already requires.
+
+Deliberately **not** included, regardless of framing: decoy/spoofed source
+IPs, or anything else whose purpose is hiding which host is doing the
+scanning. Both flags above change *how* this tool's own traffic looks -
+they don't disguise who's sending it.
+

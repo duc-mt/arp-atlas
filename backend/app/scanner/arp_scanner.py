@@ -15,9 +15,11 @@ Notes:         Requires Python 3.8+
 from __future__ import annotations
 
 import ipaddress
+import random
+import time
 from typing import Any
 
-from backend.app.config import DEFAULT_TIMEOUT
+from backend.app.config import DEFAULT_TIMEOUT, GENTLE_SCAN_JITTER
 
 
 def validate_network(network: str) -> str:
@@ -57,12 +59,22 @@ def validate_network(network: str) -> str:
     return str(net)
 
 
+def _expand_hosts(network: str) -> list[str]:
+    """Expand a CIDR network into its individual host addresses (the
+    network and broadcast addresses are excluded, same as scapy's own
+    ARP sweep effectively treats them)."""
+    return [str(ip) for ip in ipaddress.ip_network(network, strict=False).hosts()]
+
+
 def scan_network(
     network: str | list[str],
     timeout: float = DEFAULT_TIMEOUT,
     iface: str | None = None,
+    *,
+    gentle: bool = False,
+    jitter_range: tuple[float, float] = GENTLE_SCAN_JITTER,
 ) -> list[dict[str, Any]]:
-    """Send an ARP broadcast to `network` and collect the replies.
+    """Send ARP requests to `network` and collect the replies.
 
     Parameters
     ----------
@@ -74,6 +86,19 @@ def scan_network(
     iface : str | None
         Network interface to bind to (e.g. "en0"). None = let scapy
         choose.
+    gentle : bool
+        If False (default), send one broadcast covering the whole
+        range in a single `scapy.srp()` call - fastest, but puts all
+        the ARP traffic on the wire at once. If True, probe hosts one
+        at a time, in randomised order, with a small random delay
+        between each - friendlier to switches/monitoring tuned to flag
+        a burst of broadcasts as a storm or a sequential sweep as
+        suspicious, at the cost of a scan that takes roughly
+        `host_count * (timeout + jitter)` in the worst case instead of
+        one shared `timeout` window.
+    jitter_range : tuple[float, float]
+        (min, max) seconds to randomly wait between hosts in gentle
+        mode. Ignored when `gentle` is False.
 
     Returns
     -------
@@ -82,15 +107,27 @@ def scan_network(
     """
     import scapy.all as scapy  # type: ignore[import-untyped]
 
-    arp_request = scapy.ARP(pdst=network)  # type: ignore[attr-defined]
     broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")  # type: ignore[attr-defined]
-    arp_broadcast = broadcast / arp_request
 
-    answered, _unanswered = scapy.srp(arp_broadcast, timeout=timeout, verbose=False, iface=iface)
+    if not gentle:
+        arp_request = scapy.ARP(pdst=network)  # type: ignore[attr-defined]
+        answered, _unanswered = scapy.srp(
+            broadcast / arp_request, timeout=timeout, verbose=False, iface=iface
+        )
+        return [{"ip": packet[1].psrc, "mac": packet[1].hwsrc} for packet in answered]
+
+    targets = list(network) if isinstance(network, list) else _expand_hosts(network)
+    random.shuffle(targets)  # nosec B311 - scan pacing/ordering, not a security control
 
     devices = []
-    for packet in answered:
-        ip = packet[1].psrc
-        mac = packet[1].hwsrc
-        devices.append({"ip": ip, "mac": mac})
+    last_index = len(targets) - 1
+    for index, ip in enumerate(targets):
+        arp_request = scapy.ARP(pdst=ip)  # type: ignore[attr-defined]
+        answered, _unanswered = scapy.srp(
+            broadcast / arp_request, timeout=timeout, verbose=False, iface=iface
+        )
+        for packet in answered:
+            devices.append({"ip": packet[1].psrc, "mac": packet[1].hwsrc})
+        if index != last_index:
+            time.sleep(random.uniform(*jitter_range))  # nosec B311 - pacing delay
     return devices

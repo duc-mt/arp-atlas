@@ -21,13 +21,45 @@ from typing import Any
 from backend.app.config import COMMON_PORTS
 
 
+def _tcp_syn_scan(ip: str, ports: list[int], timeout: float) -> list[int]:
+    """Half-open (SYN) scan: send a bare SYN per port, record it as
+    open on a SYN+ACK, then tear the attempt down ourselves with a RST
+    before a full handshake ever completes - the same technique nmap's
+    default privileged scan (`-sS`) uses. Lower overhead per port than
+    `scan_device_ports`'s TCP-connect probe, and the target's own
+    application never sees an established connection (so e.g. an HTTP
+    or SSH access log never gets a line for it).
+
+    Needs raw-socket privileges, same as the ARP sweep this tool
+    already requires - no new privilege footprint for callers that
+    already run the scanner as intended.
+    """
+    import scapy.all as scapy  # type: ignore[import-untyped]
+
+    open_ports: list[int] = []
+    for port in ports:
+        syn = scapy.IP(dst=ip) / scapy.TCP(dport=port, flags="S")  # type: ignore[attr-defined]
+        response = scapy.sr1(syn, timeout=timeout, verbose=False)
+        if response is None or not response.haslayer(scapy.TCP):  # type: ignore[attr-defined]
+            continue
+        tcp_layer = response.getlayer(scapy.TCP)  # type: ignore[attr-defined]
+        if tcp_layer.flags != 0x12:  # SYN+ACK only - anything else isn't "open"
+            continue
+        open_ports.append(port)
+        rst = scapy.IP(dst=ip) / scapy.TCP(  # type: ignore[attr-defined]
+            dport=port, flags="R", seq=tcp_layer.ack
+        )
+        scapy.send(rst, verbose=False)
+    return open_ports
+
+
 def scan_device_ports(
     ip: str,
     ports: list[int] | None = None,
     timeout: float = 0.3,
+    method: str = "connect",
 ) -> list[int]:
-    """Attempt a TCP connect to each port in `ports` and return the
-    ones that accepted a connection.
+    """Probe each port in `ports` and return the ones found open.
 
     Parameters
     ----------
@@ -36,7 +68,12 @@ def scan_device_ports(
     ports : list[int] or None
         Which ports to try. Defaults to COMMON_PORTS.
     timeout : float
-        Seconds to wait for each connection attempt.
+        Seconds to wait for each probe.
+    method : str
+        "connect" (default) completes a full TCP handshake per port -
+        no special privileges needed beyond a normal socket. "syn"
+        does a half-open SYN probe instead (see `_tcp_syn_scan`) -
+        needs the same raw-socket privileges as the ARP sweep.
 
     Returns
     -------
@@ -45,6 +82,10 @@ def scan_device_ports(
         order they were probed.
     """
     ports = COMMON_PORTS if ports is None else ports
+
+    if method == "syn":
+        return _tcp_syn_scan(ip, ports, timeout)
+
     open_ports = []
     for port in ports:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -163,15 +204,19 @@ def scan_devices_ports(
     ports: list[int] | None = None,
     timeout: float = 0.3,
     progress_callback: Any = None,
+    method: str = "connect",
 ) -> list[dict[str, Any]]:
     """Add "open_ports" and "role" fields to each device dict in
     place, using scan_device_ports() and classify_device(), utilizing
     threads for speed.
+
+    `method` is passed straight through to scan_device_ports() -
+    "connect" (default) or "syn" (see there for what each does).
     """
     ports = COMMON_PORTS if ports is None else ports
 
     def _scan(device: dict[str, Any]) -> dict[str, Any]:
-        open_ports = scan_device_ports(device["ip"], ports, timeout)
+        open_ports = scan_device_ports(device["ip"], ports, timeout, method=method)
         device["open_ports"] = open_ports
         device["role"] = classify_device(device.get("vendor"), open_ports)
         return device
