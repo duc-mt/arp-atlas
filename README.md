@@ -39,12 +39,21 @@ To run this project, Python 3.10+ is required.
 
 ### Quick Start (Recommended)
 
-You can run the seamless cross-platform `run.py` launcher, which automatically creates the `.venv`, installs dependencies, and syncs updates:
+The project includes smart automatic launchers that inspect your system, auto-create `.venv` if missing, install dependencies, and run the CLI or web dashboard:
 
 ```bash
-./run.py                       # Interactive prompt
-./run.py --dashboard           # Launch web dashboard
-./run.py --network 10.0.0.0/24 # Non-interactive scan
+# Linux / macOS / WSL:
+./run.sh                       # Interactive prompt
+./run.sh --dashboard           # Launch web dashboard
+./run.sh --network 10.0.0.0/24 # Non-interactive scan
+
+# Windows (CMD / PowerShell / Double-click):
+run.bat                        # Interactive prompt
+run.bat --dashboard            # Launch web dashboard
+
+# Or directly via Python:
+python3 run.py                 # Linux / macOS
+python run.py                  # Windows
 ```
 
 ### Running without `sudo` (Optional)
