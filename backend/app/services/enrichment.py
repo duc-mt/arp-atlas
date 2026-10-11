@@ -337,19 +337,14 @@ async def _query_dns_like(
     transaction_id = random.randint(0, 0xFFFF)  # nosec B311 - protocol transaction id, not a secret
     query = _build_dns_ptr_query(name, transaction_id)
     deadline = loop.time() + timeout
-
     try:
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 return None
             result: asyncio.Future[bytes] = loop.create_future()
-
-            def _protocol_factory() -> _DatagramResponseProtocol:
-                return _DatagramResponseProtocol(result)
-
             transport, _ = await loop.create_datagram_endpoint(
-                _protocol_factory,
+                functools.partial(_DatagramResponseProtocol, result),
                 family=socket.AF_INET,
                 allow_broadcast=True,
             )
