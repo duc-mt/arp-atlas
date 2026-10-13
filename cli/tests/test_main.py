@@ -22,7 +22,10 @@ run_interactive() prompts three times in the happy path: the
 network, whether to scan ports, and an optional export path.
 """
 
+from pathlib import Path
 from unittest import mock
+
+import pytest
 
 from backend.app.config import HISTORY_FILE
 from cli.arp_atlas_cli.main import run_interactive
@@ -32,7 +35,9 @@ _M = "cli.arp_atlas_cli.main"
 
 
 class TestMainValidationError:
-    def test_invalid_network_prints_error_and_does_not_scan(self, capsys: mock.ANY) -> None:
+    def test_invalid_network_prints_error_and_does_not_scan(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         with (
             mock.patch("builtins.input", return_value="not an address"),
             mock.patch(f"{_M}.scan_network") as mock_scan,
@@ -45,7 +50,9 @@ class TestMainValidationError:
 
 
 class TestMainPermissionError:
-    def test_permission_error_is_handled_gracefully(self, capsys: mock.ANY) -> None:
+    def test_permission_error_is_handled_gracefully(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         with (
             mock.patch("builtins.input", return_value="192.168.1.0/24"),
             mock.patch(
@@ -60,7 +67,9 @@ class TestMainPermissionError:
 
 
 class TestMainHappyPath:
-    def test_valid_network_scans_and_prints_results(self, capsys: mock.ANY) -> None:
+    def test_valid_network_scans_and_prints_results(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "9c:5a:6b:1e:4f:0c"}]
         inputs = iter([" 192.168.1.0/24 ", "n", ""])
         with (
@@ -90,7 +99,9 @@ class TestMainHappyPath:
         out = capsys.readouterr().out
         assert "192.168.1.1" in out
 
-    def test_ip_conflict_prints_a_warning_before_the_results(self, capsys: mock.ANY) -> None:
+    def test_ip_conflict_prints_a_warning_before_the_results(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         """Two different MACs answering for the same IP should surface a warning."""
         devices = [
             {"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"},
@@ -114,7 +125,7 @@ class TestMainHappyPath:
 
 
 class TestPortScanPrompt:
-    def test_yes_answer_runs_the_port_scan(self, capsys: mock.ANY) -> None:
+    def test_yes_answer_runs_the_port_scan(self, capsys: pytest.CaptureFixture) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "y", ""])
         with (
@@ -129,7 +140,9 @@ class TestPortScanPrompt:
 
         mock_scan_ports.assert_called_once_with(devices)
 
-    def test_default_no_answer_skips_the_port_scan(self, capsys: mock.ANY) -> None:
+    def test_default_no_answer_skips_the_port_scan(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "", ""])
         with (
@@ -146,7 +159,7 @@ class TestPortScanPrompt:
 
 
 class TestHistoryDiff:
-    def test_previous_scan_triggers_a_diff(self, capsys: mock.ANY) -> None:
+    def test_previous_scan_triggers_a_diff(self, capsys: pytest.CaptureFixture) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         previous = {
             "192.168.1.0/24": {
@@ -168,7 +181,9 @@ class TestHistoryDiff:
         assert "New devices since last scan" in out
         mock_save_scan.assert_called_once_with(HISTORY_FILE, "192.168.1.0/24", devices)
 
-    def test_no_previous_scan_means_no_diff_output(self, capsys: mock.ANY) -> None:
+    def test_no_previous_scan_means_no_diff_output(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "n", ""])
         with (
@@ -185,7 +200,7 @@ class TestHistoryDiff:
 
 
 class TestExportPrompt:
-    def test_blank_answer_skips_export(self, capsys: mock.ANY) -> None:
+    def test_blank_answer_skips_export(self, capsys: pytest.CaptureFixture) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "n", ""])
         with (
@@ -201,7 +216,9 @@ class TestExportPrompt:
         mock_export.assert_not_called()
         assert "exported" not in capsys.readouterr().out
 
-    def test_a_path_triggers_export(self, capsys: mock.ANY, tmp_path: mock.ANY) -> None:
+    def test_a_path_triggers_export(
+        self, capsys: pytest.CaptureFixture, tmp_path: Path
+    ) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         out_path = str(tmp_path / "scan.csv")
         inputs = iter(["192.168.1.0/24", "n", out_path])
@@ -218,7 +235,9 @@ class TestExportPrompt:
         mock_export.assert_called_once_with(devices, out_path)
         assert "exported" in capsys.readouterr().out
 
-    def test_export_failure_is_reported_not_raised(self, capsys: mock.ANY) -> None:
+    def test_export_failure_is_reported_not_raised(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
         devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
         inputs = iter(["192.168.1.0/24", "n", "/no/such/dir/scan.csv"])
         with (
