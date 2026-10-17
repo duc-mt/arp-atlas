@@ -37,7 +37,22 @@ module for colourised error output, and the standard library's
 
 To run this project, Python 3.10+ is required.
 
-### Quick Start (Recommended)
+### Quick Start (Standalone Executable - No Python Required)
+
+For offline environments or machines without Python installed:
+1. Download the standalone executable from [GitHub Releases](https://github.com/duc-mt/arp-atlas/releases) under **Latest Build**:
+   - `arp-atlas-windows-amd64.exe` (Windows 64-bit; requires [Npcap](https://npcap.com/))
+   - `arp-atlas-linux-amd64` (Linux 64-bit; run with `sudo`)
+2. Run directly:
+   ```bash
+   # Linux:
+   sudo ./arp-atlas-linux-amd64 --network 192.168.1.0/24
+
+   # Windows (Run Command Prompt as Administrator):
+   arp-atlas-windows-amd64.exe --network 192.168.1.0/24
+   ```
+
+### Quick Start (Source / Developer)
 
 The project includes smart automatic launchers that inspect your system, auto-create `.venv` if missing, install dependencies, and run the CLI or web dashboard:
 

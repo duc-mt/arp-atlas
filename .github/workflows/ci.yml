@@ -1,9 +1,10 @@
-name: 🐍 CI
+name: 🐍 CI & Release
 
 on:
   pull_request:
   push:
     branches: [master, main]
+    tags: ['v*']
 
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
@@ -11,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   lint:
@@ -61,3 +62,122 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: bandit -r backend/app cli/arp_atlas_cli
       - run: pip-audit -r requirements.txt
+
+  build-linux:
+    name: ⤵️ Build Linux Binary
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyInstaller and dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          # install optional web dashboard dependencies if present
+          pip install fastapi uvicorn 2>/dev/null || true
+
+      - name: Package with PyInstaller
+        run: |
+          pyinstaller --onefile \
+            --name arp-atlas-linux-amd64 \
+            --collect-all scapy \
+            --collect-all rich \
+            main.py
+
+      - name: Upload Linux Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: arp-atlas-linux
+          path: dist/arp-atlas-linux-amd64
+
+  build-windows:
+    name: ⤵️ Build Windows Binary
+    needs: [test, lint]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyInstaller and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pip install fastapi uvicorn 2>$null
+
+      - name: Package with PyInstaller
+        run: |
+          pyinstaller --onefile `
+            --name arp-atlas-windows-amd64 `
+            --collect-all scapy `
+            --collect-all rich `
+            main.py
+
+      - name: Upload Windows Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: arp-atlas-windows
+          path: dist/arp-atlas-windows-amd64.exe
+
+  release:
+    name: 🚀 GitHub Release
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arp-atlas-linux
+          path: bin
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arp-atlas-windows
+          path: bin
+
+      - name: Generate Checksums
+        run: |
+          cd bin
+          chmod +x arp-atlas-linux-amd64 2>/dev/null || true
+          sha256sum arp-atlas-* > checksums.txt 2>/dev/null || shasum -a 256 arp-atlas-* > checksums.txt
+          cat checksums.txt
+
+      - name: Determine Release Tag
+        id: release_info
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            echo "tag_name=${tag}" >> $GITHUB_OUTPUT
+            echo "release_name=${tag}" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "tag_name=latest" >> $GITHUB_OUTPUT
+            echo "release_name=Latest Build" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag_name }}
+          name: ${{ steps.release_info.outputs.release_name }}
+          files: |
+            bin/arp-atlas-*
+            bin/checksums.txt
+          generate_release_notes: true
+          make_latest: "true"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
