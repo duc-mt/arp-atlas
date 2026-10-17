@@ -6,24 +6,24 @@ REM Usage:         run.bat [options]
 REM ==============================================================================
 setlocal EnableDelayedExpansion
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 REM 1. If virtual environment exists, use its Python directly
 if exist ".venv\Scripts\python.exe" (
-    ".venv\Scripts\python.exe" run.py %*
+    ".venv\Scripts\python.exe" "%~dp0run.py" %*
     exit /b %ERRORLEVEL%
 )
 
 REM 2. Otherwise locate Windows Python Launcher (py -3) or system python
 where py >nul 2>nul
 if %ERRORLEVEL% equ 0 (
-    py -3 run.py %*
+    py -3 "%~dp0run.py" %*
     exit /b %ERRORLEVEL%
 )
 
 where python >nul 2>nul
 if %ERRORLEVEL% equ 0 (
-    python run.py %*
+    python "%~dp0run.py" %*
     exit /b %ERRORLEVEL%
 )
 

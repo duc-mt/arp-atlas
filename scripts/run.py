@@ -44,7 +44,7 @@ def mark_fresh(stamp_file: Path):
 def main():
     check_python_version()
 
-    root_dir = Path(__file__).parent.resolve()
+    root_dir = Path(__file__).resolve().parent.parent
     os.chdir(root_dir)
 
     is_windows = platform.system() == "Windows"

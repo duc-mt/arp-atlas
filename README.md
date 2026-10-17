@@ -42,18 +42,14 @@ To run this project, Python 3.10+ is required.
 The project includes smart automatic launchers that inspect your system, auto-create `.venv` if missing, install dependencies, and run the CLI or web dashboard:
 
 ```bash
-# Linux / macOS / WSL:
-./run.sh                       # Interactive prompt
-./run.sh --dashboard           # Launch web dashboard
-./run.sh --network 10.0.0.0/24 # Non-interactive scan
-
-# Windows (CMD / PowerShell / Double-click):
-run.bat                        # Interactive prompt
-run.bat --dashboard            # Launch web dashboard
+# Universal Launcher (Linux / macOS / Windows / WSL):
+./run                          # Interactive prompt
+./run --dashboard              # Launch web dashboard
+./run --network 10.0.0.0/24    # Non-interactive scan
 
 # Or directly via Python:
-python3 run.py                 # Linux / macOS
-python run.py                  # Windows
+python3 scripts/run.py         # Linux / macOS
+python scripts\run.py          # Windows
 ```
 
 ### Running without `sudo` (Optional)
@@ -97,20 +93,20 @@ Features include:
 
 To launch:
 ```bash
-sudo ./run.py --dashboard
+./run --dashboard
 ```
 Navigate to `http://localhost:8080` in your web browser.
 
 To use this project, you can run the script from the command line as root (or standard user if configured above), either interactively:
 
 ```bash
-$ sudo ./run.py
+$ ./run
 ```
 
 ...or non-interactively, for scripting and automation:
 
 ```bash
-$ sudo ./run.py --network 192.168.1.0/24
+$ ./run --network 192.168.1.0/24
 ```
 
 The network address must be a valid IP address or network, otherwise the
