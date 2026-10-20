@@ -15,15 +15,19 @@ Notes:         Requires Python 3.8+
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import functools
 import gzip
 import random
 import socket
 import struct
+from collections.abc import Coroutine
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from backend.app.config import DEFAULT_HOSTNAME_TIMEOUT
+
+_T = TypeVar("_T")
 
 # ==============================================================================
 # Vendor / OUI resolution
@@ -545,6 +549,25 @@ def lookup_hostname(ip: str, timeout: float = DEFAULT_HOSTNAME_TIMEOUT) -> str |
         return None
 
 
+def _run_blocking(coro: Coroutine[Any, Any, _T]) -> _T:
+    """Run `coro` to completion from synchronous code.
+
+    `asyncio.run()` raises RuntimeError if the calling thread already has
+    a running event loop (a Jupyter cell, an async web handler, a future
+    pipeline that merges this with the async port scanner). In that case
+    run the coroutine on a fresh loop in a helper thread instead; the
+    caller blocks either way, exactly as it does for a plain
+    `asyncio.run()`. Async callers that don't want to block should
+    await `_enrich_devices_async()` directly.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 async def _enrich_devices_async(devices: list[dict[str, Any]]) -> None:
     sem = asyncio.Semaphore(50)
 
@@ -577,6 +600,6 @@ def enrich_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
         device["is_randomized"] = is_mac_randomized(device["mac"])
 
     if devices:
-        asyncio.run(_enrich_devices_async(devices))
+        _run_blocking(_enrich_devices_async(devices))
 
     return devices

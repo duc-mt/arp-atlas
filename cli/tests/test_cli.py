@@ -27,7 +27,7 @@ from unittest import mock
 
 import pytest
 
-from backend.app.config import DEFAULT_TIMEOUT, HISTORY_FILE
+from backend.app.config import DEFAULT_TIMEOUT, HISTORY_FILE, QUICK_PORTS
 from cli.arp_atlas_cli.main import main
 
 
@@ -190,6 +190,87 @@ class TestScanPortsFlag:
             run_main(["--network", "192.168.1.0/24", "--syn-scan"])
 
         mock_scan_ports.assert_not_called()
+
+
+class TestPortScanOptionFlags:
+    """--ports, --snmp-probe and --async-scan, on top of --scan-ports."""
+
+    _DEVICES: typing.ClassVar[list[dict[str, typing.Any]]] = [
+        {"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}
+    ]
+
+    def _run(self, *flags: str) -> tuple[mock.MagicMock, mock.MagicMock]:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=self._DEVICES),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+            mock.patch(f"{_M}.scan_devices_ports") as mock_threads,
+            mock.patch(f"{_M}.scan_devices_ports_async") as mock_async,
+        ):
+            run_main(["--network", "192.168.1.0/24", *flags])
+        return mock_threads, mock_async
+
+    def test_ports_list_is_parsed_and_passed(self) -> None:
+        mock_threads, _ = self._run("--scan-ports", "--ports", "22,8000-8002")
+        mock_threads.assert_called_once_with(
+            self._DEVICES, method="connect", ports=[22, 8000, 8001, 8002]
+        )
+
+    def test_ports_preset_name(self) -> None:
+        mock_threads, _ = self._run("--scan-ports", "--ports", "quick")
+        assert mock_threads.call_args.kwargs["ports"] == QUICK_PORTS
+
+    def test_ports_combines_with_syn_scan(self) -> None:
+        mock_threads, _ = self._run("--scan-ports", "--syn-scan", "--ports", "443")
+        mock_threads.assert_called_once_with(self._DEVICES, method="syn", ports=[443])
+
+    def test_snmp_probe_is_passed(self) -> None:
+        mock_threads, _ = self._run("--scan-ports", "--snmp-probe")
+        mock_threads.assert_called_once_with(self._DEVICES, method="connect", snmp=True)
+
+    def test_async_scan_uses_the_async_scanner(self) -> None:
+        mock_threads, mock_async = self._run("--scan-ports", "--async-scan")
+        mock_threads.assert_not_called()
+        mock_async.assert_called_once_with(self._DEVICES)
+
+    def test_async_scan_passes_ports_and_snmp(self) -> None:
+        _, mock_async = self._run(
+            "--scan-ports", "--async-scan", "--ports", "22,80", "--snmp-probe"
+        )
+        mock_async.assert_called_once_with(self._DEVICES, ports=[22, 80], snmp=True)
+
+    @pytest.mark.parametrize(
+        "flags",
+        [["--ports", "22"], ["--snmp-probe"], ["--async-scan"]],
+    )
+    def test_flags_without_scan_ports_are_an_error(
+        self, flags: list[str], capsys: pytest.CaptureFixture
+    ) -> None:
+        with mock.patch(f"{_M}.scan_network") as mock_scan, pytest.raises(SystemExit) as exc:
+            run_main(["--network", "192.168.1.0/24", *flags])
+        assert exc.value.code == 2
+        assert "requires --scan-ports" in capsys.readouterr().err
+        mock_scan.assert_not_called()
+
+    def test_async_scan_cannot_be_combined_with_syn_scan(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        with mock.patch(f"{_M}.scan_network") as mock_scan, pytest.raises(SystemExit) as exc:
+            run_main(["--network", "192.168.1.0/24", "--scan-ports", "--async-scan", "--syn-scan"])
+        assert exc.value.code == 2
+        assert "--syn-scan" in capsys.readouterr().err
+        mock_scan.assert_not_called()
+
+    @pytest.mark.parametrize("spec", ["abc", "22,,80", "70000", "90-80", ""])
+    def test_a_bad_ports_spec_fails_before_the_arp_sweep(
+        self, spec: str, capsys: pytest.CaptureFixture
+    ) -> None:
+        with mock.patch(f"{_M}.scan_network") as mock_scan, pytest.raises(SystemExit) as exc:
+            run_main(["--network", "192.168.1.0/24", "--scan-ports", "--ports", spec])
+        assert exc.value.code == 2
+        assert "--ports" in capsys.readouterr().err
+        mock_scan.assert_not_called()
 
 
 class TestHistoryFlags:

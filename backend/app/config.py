@@ -20,8 +20,59 @@ DEFAULT_TIMEOUT = 1.0
 # Persistence file for scan history
 HISTORY_FILE = "scan_history.json"
 
-# Well-known ports probed when --scan-ports is enabled
-COMMON_PORTS = [22, 80, 443, 3389, 9100]
+# Well-known TCP ports probed when --scan-ports is enabled. Deliberately
+# covers every port classifier.classify_device() keys on (telnet, SMB/RPC,
+# printer protocols, RTSP and the camera vendors' proprietary ports, MQTT,
+# common database/mail/FTP ports, alternate web ports) - a port the
+# classifier looks for but the scan never probes is a rule that can never
+# fire. SNMP (161) is UDP, so it is not in this list; see SNMP_PORT.
+COMMON_PORTS = [
+    21,
+    22,
+    23,
+    25,
+    80,
+    135,
+    143,
+    443,
+    445,
+    515,
+    554,
+    631,
+    1883,
+    3306,
+    3389,
+    5432,
+    8000,
+    8080,
+    8443,
+    8883,
+    9100,
+    34567,
+    37777,
+]
+
+# The original five-port set - several times faster per device. Select it
+# with `--ports quick`.
+QUICK_PORTS = [22, 80, 443, 3389, 9100]
+
+# Names accepted by `--ports` (and classifier.parse_port_spec()).
+PORT_PRESETS = {"quick": QUICK_PORTS, "common": COMMON_PORTS}
+
+# SNMP listens on UDP/161, which a TCP connect or SYN probe can never find.
+# With --snmp-probe a UDP SNMP GET is sent instead, and 161 is added to a
+# device's open_ports when an agent answers.
+SNMP_PORT = 161
+
+# Upper bound on devices scanned in parallel by the threaded port scanner.
+# Ports are probed one at a time per device, so this is also the most TCP
+# sockets (or scapy sessions) the scan holds open at once.
+MAX_SCAN_WORKERS = 50
+
+# Async port scanner (--async-scan): hard cap on concurrently open sockets
+# across all devices, and on devices in flight at once.
+ASYNC_FD_CAP = 256
+ASYNC_HOST_CONCURRENCY = 64
 
 # Per-protocol timeout for hostname resolution (reverse DNS, mDNS, LLMNR,
 # NBNS). Kept in the 0.4s-0.6s band: long enough for a real LAN device to

@@ -22,7 +22,8 @@ from typing import Any
 
 from backend.app.config import DEFAULT_TIMEOUT, HISTORY_FILE
 from backend.app.scanner.arp_scanner import scan_network, validate_network
-from backend.app.scanner.classifier import scan_devices_ports
+from backend.app.scanner.classifier import parse_port_spec, scan_devices_ports
+from backend.app.scanner.port_scanner_async import scan_devices_ports_async
 from backend.app.services.conflict_service import find_ip_conflicts
 from backend.app.services.enrichment import enrich_devices
 from backend.app.services.export_service import export_devices
@@ -110,7 +111,10 @@ def check_privileges() -> None:
 
     if not has_raw_access:
         print("\n[!] ERROR: Insufficient privileges to send raw network packets.", file=sys.stderr)
-        print("[!] ARP Atlas requires root privileges (or configured capabilities/bpf access).", file=sys.stderr)
+        print(
+            "[!] ARP Atlas requires root privileges (or configured capabilities/bpf access).",
+            file=sys.stderr,
+        )
         print("[!] Please re-run with sudo:\n", file=sys.stderr)
         cmd_args = " ".join(sys.argv)
         print(f"    sudo {cmd_args}\n", file=sys.stderr)
@@ -147,8 +151,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--scan-ports",
         action="store_true",
-        help="Also probe a handful of common ports on each device and guess its role. "
+        help="Also probe common TCP ports on each device (see --ports) and guess its role. "
         "Adds noticeable time per device, so this is opt-in.",
+    )
+    parser.add_argument(
+        "--ports",
+        metavar="SPEC",
+        help="With --scan-ports, which TCP ports to probe: a preset ('common' - the default, "
+        "every port the role classifier looks at - or 'quick', the original five) or a "
+        "comma-separated list with ranges, e.g. 22,80,8000-8010.",
+    )
+    parser.add_argument(
+        "--snmp-probe",
+        action="store_true",
+        help="With --scan-ports, also send an SNMPv2c GET (community 'public') to UDP/161 on "
+        "each device; an agent that answers shows up as port 161 in open_ports. SNMP is UDP, "
+        "so the TCP probes can never find it. Agents using another community stay silent.",
+    )
+    parser.add_argument(
+        "--async-scan",
+        action="store_true",
+        help="With --scan-ports, probe ports with the asyncio scanner (a hard cap on "
+        "concurrently open sockets) instead of the thread pool. TCP connect only - "
+        "can't be combined with --syn-scan.",
     )
     parser.add_argument(
         "--syn-scan",
@@ -251,12 +276,42 @@ def run_interactive() -> int:
     return 0
 
 
+def _port_scan_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict[str, Any]:
+    """Validate the port-scan flags and return the extra keyword arguments
+    for the scanner. Runs before the ARP sweep so a typo in --ports fails
+    immediately instead of after the whole network has been scanned."""
+    used = {
+        "--ports": args.ports is not None,
+        "--snmp-probe": args.snmp_probe,
+        "--async-scan": args.async_scan,
+    }
+    for flag, is_used in used.items():
+        if is_used and not args.scan_ports:
+            parser.error(f"{flag} requires --scan-ports")
+    if args.async_scan and args.syn_scan:
+        parser.error(
+            "--async-scan only does TCP connect scans; it can't be combined with --syn-scan"
+        )
+
+    options: dict[str, Any] = {}
+    if args.ports is not None:
+        try:
+            options["ports"] = parse_port_spec(args.ports)
+        except ValueError as e:
+            parser.error(f"--ports: {e}")
+    if args.snmp_probe:
+        options["snmp"] = True
+    return options
+
+
 def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Run one CLI-mode scan and return a process exit code."""
     try:
         network = validate_network(args.network)
     except ValueError:
         parser.error(f"{args.network!r} is not a valid network address")
+
+    port_options = _port_scan_options(args, parser)
 
     devices = _scan_or_none(network, timeout=args.timeout, gentle=args.gentle_scan)
     if devices is None:
@@ -269,7 +324,12 @@ def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     enrich_devices(devices)
 
     if args.scan_ports:
-        scan_devices_ports(devices, method="syn" if args.syn_scan else "connect")
+        if args.async_scan:
+            scan_devices_ports_async(devices, **port_options)
+        else:
+            scan_devices_ports(
+                devices, method="syn" if args.syn_scan else "connect", **port_options
+            )
 
     if args.stream_jsonl:
         for device in devices:

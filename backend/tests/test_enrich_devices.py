@@ -14,10 +14,11 @@ Notes:         Requires Python 3.8+
 
 from __future__ import annotations
 
+import asyncio
 import typing
 from unittest import mock
 
-from backend.app.services.enrichment import enrich_devices
+from backend.app.services.enrichment import _run_blocking, enrich_devices
 
 
 class TestEnrichDevices:
@@ -129,3 +130,59 @@ class TestEnrichDevicesMultiProtocolHostnames:
         assert result[0]["hostname"] == "router.local"
         assert result[1]["hostname"] == "WIN-FILESERVER"
         assert result[2]["hostname"] is None
+
+
+class TestEnrichDevicesInsideARunningLoop:
+    """enrich_devices() used to call asyncio.run() unconditionally, which
+    raises RuntimeError when the calling thread already has a running
+    loop (a Jupyter cell, an async web handler, a pipeline that also uses
+    the async port scanner)."""
+
+    def test_works_when_called_from_a_coroutine(self):
+        devices: list[dict[str, typing.Any]] = [{"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}]
+
+        async def caller():
+            return enrich_devices(devices)
+
+        with (
+            mock.patch("backend.app.services.enrichment.lookup_vendor", return_value="Vendor A"),
+            mock.patch(
+                "backend.app.services.enrichment._lookup_hostname_async",
+                return_value="host-a.local",
+            ),
+        ):
+            result = asyncio.run(caller())
+
+        assert result is devices
+        assert devices[0]["vendor"] == "Vendor A"
+        assert devices[0]["hostname"] == "host-a.local"
+
+    def test_run_blocking_returns_the_value_without_a_running_loop(self):
+        async def answer():
+            return 42
+
+        assert _run_blocking(answer()) == 42
+
+    def test_run_blocking_returns_the_value_inside_a_running_loop(self):
+        async def answer():
+            return 42
+
+        async def caller():
+            return _run_blocking(answer())
+
+        assert asyncio.run(caller()) == 42
+
+    def test_run_blocking_propagates_exceptions_from_the_coroutine(self):
+        async def fail():
+            raise ValueError("boom")
+
+        async def caller():
+            return _run_blocking(fail())
+
+        for runner in (lambda: _run_blocking(fail()), lambda: asyncio.run(caller())):
+            try:
+                runner()
+            except ValueError as e:
+                assert str(e) == "boom"
+            else:
+                raise AssertionError("expected ValueError")

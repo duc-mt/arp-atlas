@@ -141,9 +141,17 @@ Run `python main.py --help` for the full list. The main ones:
 # Give a larger network more time to reply (default: 1 second)
 $ sudo python main.py --network 10.0.0.0/16 --timeout 5
 
-# Also probe a handful of common ports and guess each device's role -
+# Also probe common ports and guess each device's role -
 # adds noticeable time per device, so this is opt-in
 $ sudo python main.py --network 192.168.1.0/24 --scan-ports
+
+# Choose the ports: a preset (common - the default - or quick) or your own list
+$ sudo python main.py --network 192.168.1.0/24 --scan-ports --ports quick
+$ sudo python main.py --network 192.168.1.0/24 --scan-ports --ports 22,80,8000-8010
+
+# Also look for SNMP agents (UDP/161), or use the asyncio port scanner
+$ sudo python main.py --network 192.168.1.0/24 --scan-ports --snmp-probe
+$ sudo python main.py --network 192.168.1.0/24 --scan-ports --async-scan
 
 # Export results (format inferred from the extension)
 $ sudo python main.py --network 192.168.1.0/24 --output scan.csv
@@ -204,10 +212,13 @@ most networks, not an error.
 arp-atlas/
 ├── backend/                Core scanning engine and HTTP server
 │   └── app/
-│       ├── config.py       Shared constants (DEFAULT_TIMEOUT, HISTORY_FILE, COMMON_PORTS)
+│       ├── config.py       Shared constants (DEFAULT_TIMEOUT, HISTORY_FILE, COMMON_PORTS, PORT_PRESETS, ...)
+│       ├── models.py       NetworkDevice - typed view of a device dict with an exact dict round trip
 │       ├── scanner/
 │       │   ├── arp_scanner.py    validate_network() + scan_network() — Scapy ARP sweep
-│       │   └── classifier.py     scan_device_ports(), classify_device(), scan_devices_ports()
+│       │   ├── classifier.py     scan_device_ports(), classify_device(), scan_devices_ports(),
+│       │   │                     parse_port_spec(), snmp_probe()
+│       │   └── port_scanner_async.py  asyncio TCP connect scanner with a socket cap
 │       ├── services/
 │       │   ├── enrichment.py     lookup_vendor() (OUI), lookup_hostname() (rDNS), enrich_devices()
 │       │   ├── conflict_service.py  find_ip_conflicts() — ARP anomaly / spoofing detection
@@ -358,9 +369,9 @@ original architecture review and roadmap:
    Devices are matched by MAC address specifically, not IP, since IP can
    change between scans under DHCP.
 5. **An opt-in port scan and rough device-role guess**
-   (`scan_device_ports()`/`classify_device()`) - `--scan-ports` probes a
-   small, fixed set of well-known ports (22, 80, 443, 3389, 9100) on each
-   device and labels it printer/router-switch/windows-host/server/
+   (`scan_device_ports()`/`classify_device()`) - `--scan-ports` originally
+   probed a small, fixed set of well-known ports (22, 80, 443, 3389, 9100) on
+   each device (see "Port scan coverage and options" below for today's list) and labels it printer/router-switch/windows-host/server/
    web-enabled-device/unknown from the result plus its vendor name. This
    is a best-effort heuristic, not authoritative - it's meant to make a
    device list more skimmable, not to replace real fingerprinting. Opt-in
@@ -418,3 +429,36 @@ IPs, or anything else whose purpose is hiding which host is doing the
 scanning. Both flags above change *how* this tool's own traffic looks -
 they don't disguise who's sending it.
 
+## Port scan coverage and options
+
+`--scan-ports` used to probe only five ports (22, 80, 443, 3389, 9100), but
+`classify_device()` also keys on telnet, SMB/RPC, the printer protocols, RTSP
+and the camera vendors' proprietary ports, MQTT, and the usual
+database/mail/FTP ports. A port the classifier looks for but the scan never
+probes is a rule that can never fire, so most of the role guesses (camera,
+smart-home, router/switch via telnet, most servers) were unreachable.
+
+- **Default ports** (`COMMON_PORTS` in `config.py`) now cover every TCP port
+  the classifier uses - 23 ports. That is several times more probes per device
+  than before; for the old speed use **`--ports quick`** (the original five),
+  or **`--ports 22,80,8000-8010`** for your own list (comma-separated ports
+  and inclusive ranges; invalid input fails before the ARP sweep starts).
+- **`--snmp-probe`** - SNMP is UDP/161, which a TCP probe can never find (the
+  classifier's `161` rule was dead code). This sends one SNMPv2c GET for
+  `sysDescr.0` with community `public`; a device that answers gets `161` in
+  `open_ports` (here `161` means UDP). Agents configured with another
+  community stay silent, so a miss doesn't prove SNMP is off.
+- **`--async-scan`** - runs the TCP connect scan on an event loop
+  (`port_scanner_async.py`) with a hard cap on concurrently open sockets
+  (`ASYNC_FD_CAP`) and on devices in flight (`ASYNC_HOST_CONCURRENCY`). Same
+  results as the thread pool. TCP connect only, so it can't be combined with
+  `--syn-scan`. The thread pool is capped by `MAX_SCAN_WORKERS` (50); since
+  each device's ports are probed one at a time, that is also the most sockets
+  it holds open.
+- `--ports`, `--snmp-probe` and `--async-scan` all require `--scan-ports`.
+
+Also: `enrich_devices()` now works when called from a thread that already has
+a running event loop (it used to raise `RuntimeError`), and
+`backend.app.models.NetworkDevice` is available as an opt-in typed view of a
+device dict - `NetworkDevice.from_dict(d).to_dict() == d` for anything the
+pipeline produces, so adopting it can't change an export or a history file.
