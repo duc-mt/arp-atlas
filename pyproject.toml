@@ -30,5 +30,7 @@ warn_return_any = true
 warn_unused_configs = true
 check_untyped_defs = true
 explicit_package_bases = true
-# Exclude legacy root-level shims and old tests/ folder (migrated to backend/tests + cli/tests)
-exclude = ["^tests/", "^main\\.py$", "^dashboard\\.py$"]
+# Exclude the legacy root-level shims and the agent tooling directory (.agents/ - kept in
+# step with [tool.ruff] extend-exclude above). The old root tests/ folder is gone: its tests
+# live in backend/tests and cli/tests.
+exclude = ["^\\.agents/", "^main\\.py$", "^dashboard\\.py$"]

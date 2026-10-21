@@ -1,0 +1,134 @@
+name: 🔄 Update OUI Database
+
+# Refreshes backend/app/data/manuf.gz from Wireshark's manuf file once a month.
+# If the database really changed, the change is tested and then published as a
+# pull request (or, when started by hand with mode=commit, pushed straight to
+# the default branch). If nothing changed, nothing is committed.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" enabled under
+# Settings -> Actions -> General for the PR mode to work.
+
+on:
+  schedule:
+    # 00:00 UTC on the 1st of every month.
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "How to publish a changed database"
+        type: choice
+        options:
+          - pr
+          - commit
+        default: pr
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-oui
+  cancel-in-progress: false
+
+env:
+  OUI_FILE: backend/app/data/manuf.gz
+  UPDATE_BRANCH: chore/update-oui-db
+
+jobs:
+  update:
+    name: Refresh manuf.gz
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the latest Wireshark manuf database
+        run: scripts/update-manuf-db.sh
+
+      - name: Detect a real change
+        id: diff
+        run: |
+          set -euo pipefail
+          # The file is gzip, so compare the decompressed text: a different
+          # compressor build must not produce a pull request with no change.
+          old_lines="$(git show "HEAD:${OUI_FILE}" | gzip -dc | wc -l)"
+          new_lines="$(gzip -dc "${OUI_FILE}" | wc -l)"
+          old_sum="$(git show "HEAD:${OUI_FILE}" | gzip -dc | sha256sum | cut -d' ' -f1)"
+          new_sum="$(gzip -dc "${OUI_FILE}" | sha256sum | cut -d' ' -f1)"
+          if [ "${old_sum}" = "${new_sum}" ]; then
+            git checkout -- "${OUI_FILE}"
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            echo "The OUI database is already up to date (${new_lines} lines)." | tee -a "${GITHUB_STEP_SUMMARY}"
+          else
+            {
+              echo "changed=true"
+              echo "old_lines=${old_lines}"
+              echo "new_lines=${new_lines}"
+            } >> "${GITHUB_OUTPUT}"
+            echo "The OUI database changed: ${old_lines} -> ${new_lines} lines." | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.diff.outputs.changed == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.diff.outputs.changed == 'true'
+        run: pip install -r requirements-dev.txt
+
+      # Pull requests opened with the built-in token do not trigger other
+      # workflows, so ci.yml would never run on the update. Run the tests here
+      # instead, before anything is published.
+      - name: Test against the new database
+        if: steps.diff.outputs.changed == 'true'
+        run: pytest backend/tests cli/tests --no-cov -q
+
+      - name: Open or update the pull request
+        if: steps.diff.outputs.changed == 'true' && (github.event_name == 'schedule' || inputs.mode != 'commit')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          OLD_LINES: ${{ steps.diff.outputs.old_lines }}
+          NEW_LINES: ${{ steps.diff.outputs.new_lines }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${UPDATE_BRANCH}"
+          git add "${OUI_FILE}"
+          git commit -m "chore(data): refresh OUI database from Wireshark manuf"
+          # The branch is owned by this workflow: an unmerged PR from an earlier
+          # month is simply brought up to date.
+          git push --force origin "HEAD:refs/heads/${UPDATE_BRANCH}"
+
+          title="chore(data): refresh OUI database"
+          body="Automated monthly refresh of \`${OUI_FILE}\` from the Wireshark manuf database (${OLD_LINES} -> ${NEW_LINES} lines).
+
+          The test suite passed against the new database before this pull request was opened.
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          existing="$(gh pr list --head "${UPDATE_BRANCH}" --base "${DEFAULT_BRANCH}" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            gh pr edit "${existing}" --title "${title}" --body "${body}"
+            echo "Updated pull request #${existing}." | tee -a "${GITHUB_STEP_SUMMARY}"
+          else
+            gh pr create --base "${DEFAULT_BRANCH}" --head "${UPDATE_BRANCH}" --title "${title}" --body "${body}"
+            echo "Opened a pull request from ${UPDATE_BRANCH}." | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Commit directly to the default branch
+        if: steps.diff.outputs.changed == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'commit'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${OUI_FILE}"
+          git commit -m "chore(data): refresh OUI database from Wireshark manuf"
+          git push origin "HEAD:${DEFAULT_BRANCH}"
+          echo "Committed the refreshed database to ${DEFAULT_BRANCH}." | tee -a "${GITHUB_STEP_SUMMARY}"

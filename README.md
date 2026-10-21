@@ -402,7 +402,17 @@ as a plain "-" in the dashboard far more often than it should have:
   back to scapy's bundled database if that also misses - no new runtime
   dependency, no network call on the hot path. Run
   `scripts/update-manuf-db.sh` (needs network access) whenever you want
-  to refresh that cache from Wireshark's upstream file.
+  to refresh that cache from Wireshark's upstream file - or let
+  `.github/workflows/update-oui.yml` do it: on the 1st of every month (and
+  on demand from the Actions tab) it runs the script, and only if the
+  decompressed database actually changed it runs the test suite and opens
+  (or updates) a pull request on the `chore/update-oui-db` branch. Started by
+  hand with `mode=commit` it pushes to the default branch instead. It needs
+  "Allow GitHub Actions to create and approve pull requests" enabled in the
+  repository's Actions settings. The script refuses a download that isn't a
+  real manuf file (fewer than 1000 OUI lines, or no Wireshark header),
+  writes atomically, and gzips deterministically so an unchanged database
+  never shows up as a diff.
 - **Hostname resolution only tried unicast reverse DNS.** That depends on
   the LAN's DNS server having a PTR record for every DHCP lease, which
   most home/office networks never configure - so it silently resolved
@@ -533,3 +543,13 @@ device dicts themselves are unchanged.
 ARP sweeps and the SYN scan over loopback with real raw sockets (it skips
 itself without root / `CAP_NET_RAW`, e.g. on CI). CI now also runs
 `ruff format --check .`.
+
+`backend/tests/test_server.py` covers `run_dashboard()`: which address and
+port it binds (loopback only), that it serves requests, and that Ctrl-C (a
+real `SIGINT`) and `shutdown()` stop it and release the port - every test
+that starts a server is time-bounded so a regression can't hang the suite.
+`backend/tests/test_update_manuf_script.py` runs the OUI update script against
+`file://` sources, and `backend/tests/test_repo_config.py` guards the
+workflow wiring, unpinned (`>=`) dev dependencies and the ruff/mypy ignore
+lists. The old root-level `tests/` directory is gone; the suite lives in
+`backend/tests` and `cli/tests`.
