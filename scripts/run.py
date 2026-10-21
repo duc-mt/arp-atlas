@@ -65,18 +65,32 @@ def main():
     cli_reqs = root_dir / "cli" / "pyproject.toml"
     py_stamp = venv_dir / ".deps_installed_stamp"
 
+    pip_env = os.environ.copy()
+    pip_env["PIP_NO_CACHE_DIR"] = "1"
+    pip_env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+
     if is_stale(py_stamp, [reqs_txt, cli_reqs]) or not cli_exe.exists():
         print("Checking and installing Python dependencies...")
         if not venv_dir.exists():
             subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
 
         subprocess.run(
-            [str(python_exe), "-m", "pip", "install", "--upgrade", "pip", "-q"], check=True
+            [str(python_exe), "-m", "pip", "install", "--upgrade", "pip", "-q"],
+            env=pip_env,
+            check=True,
         )
         if reqs_txt.exists():
-            subprocess.run([str(pip_exe), "install", "-r", str(reqs_txt)], check=True)
+            subprocess.run(
+                [str(pip_exe), "install", "-r", str(reqs_txt)],
+                env=pip_env,
+                check=True,
+            )
         if cli_reqs.exists():
-            subprocess.run([str(pip_exe), "install", "-e", str(root_dir / "cli")], check=True)
+            subprocess.run(
+                [str(pip_exe), "install", "-e", str(root_dir / "cli")],
+                env=pip_env,
+                check=True,
+            )
         mark_fresh(py_stamp)
 
     # Execution

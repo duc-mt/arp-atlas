@@ -15,7 +15,7 @@ if [ "$(uname -s)" != "MINGW"* ] && [ "$(uname -s)" != "CYGWIN"* ]; then
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "[!] ARP Atlas requires root privileges (sudo) to send raw ARP packets."
         echo "    Re-running with sudo..."
-        exec sudo "$0" "$@"
+        exec sudo -H "$0" "$@"
     fi
 fi
 
