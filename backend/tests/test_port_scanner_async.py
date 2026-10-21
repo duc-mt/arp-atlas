@@ -234,6 +234,13 @@ class TestAsyncScanDevicesPorts:
             srv.close()
         assert devices[0]["open_ports"] == [port]
 
+    def test_enriched_hostname_feeds_the_classifier(self) -> None:
+        devices = _devices(1)
+        devices[0]["hostname"] = "ESP_1A2B3C"
+        with mock.patch(f"{_MOD}.async_scan_device_ports", new=mock.AsyncMock(return_value=[])):
+            asyncio.run(async_scan_devices_ports(devices))
+        assert devices[0]["role"] == "smart home device"
+
     def test_empty_device_list(self) -> None:
         assert asyncio.run(async_scan_devices_ports([])) == []
 

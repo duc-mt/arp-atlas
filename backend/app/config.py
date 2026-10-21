@@ -84,3 +84,14 @@ DEFAULT_HOSTNAME_TIMEOUT = 0.5
 # at once - useful on switches/IDS tuned to flag that as a storm or a
 # sweep. Only applies in gentle mode; the default scan is unaffected.
 GENTLE_SCAN_JITTER = (0.01, 0.05)
+
+# How many extra times the (non-gentle) ARP sweep re-sends requests that got
+# no reply. One shot loses replies on busy Wi-Fi and from sleeping IoT
+# devices; each retry costs one more `timeout` window when hosts are still
+# unanswered. `--retries 0` restores a single shot. Gentle mode ignores it.
+DEFAULT_ARP_RETRIES = 1
+MAX_ARP_RETRIES = 5
+
+# Shortest allowed `--watch` interval (seconds). A scan itself takes a few
+# seconds, so anything much smaller just re-scans back to back.
+MIN_WATCH_INTERVAL = 5.0

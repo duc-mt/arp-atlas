@@ -141,7 +141,7 @@ async def async_scan_devices_ports(
                 device["ip"], ports, timeout, fd_semaphore=fd_semaphore, snmp=snmp
             )
         device["open_ports"] = open_ports
-        device["role"] = classify_device(device.get("vendor"), open_ports)
+        device["role"] = classify_device(device.get("vendor"), open_ports, device.get("hostname"))
         completed += 1
         if progress_callback:
             try:

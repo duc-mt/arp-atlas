@@ -69,6 +69,23 @@ def print_diff(diff: dict[str, list]) -> None:
             print(f"  ~ {device['mac']}\t{old_ip} -> {device['ip']}")
 
 
+def print_alerts(alerts: list[Any]) -> None:
+    """Print each watch-mode alert (see watch_service.detect_changes()),
+    in red for the ones that suggest tampering and plain otherwise."""
+    labels = {
+        "new_device": "NEW DEVICE",
+        "mac_changed": "MAC CHANGED",
+        "gateway_mac_changed": "GATEWAY MAC CHANGED",
+    }
+    for alert in alerts:
+        label = labels.get(alert.kind, alert.kind.upper())
+        line = f"[!] {label}: {alert.ip}  {alert.mac} - {alert.detail}"
+        if alert.kind == "new_device":
+            print(line)
+        else:
+            print_error(line)
+
+
 def print_error(message: str) -> None:
     """Print an error message in red using rich."""
     custom_theme = Theme({"danger": "red"})

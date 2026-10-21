@@ -419,3 +419,216 @@ class TestCheckPrivileges:
         ):
             check_privileges()
         mock_sock.close.assert_called_once()
+
+
+class TestRetriesFlag:
+    _DEVICES: typing.ClassVar[list[dict[str, typing.Any]]] = [
+        {"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:aa"}
+    ]
+
+    def _run(self, *flags: str) -> mock.MagicMock:
+        with (
+            mock.patch(f"{_M}.scan_network", return_value=self._DEVICES) as mock_scan,
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.load_history", return_value={}),
+            mock.patch(f"{_M}.save_scan"),
+        ):
+            run_main(["--network", "192.168.1.0/24", *flags])
+        return mock_scan
+
+    def test_unset_leaves_the_scanners_own_default(self) -> None:
+        assert "retries" not in self._run().call_args.kwargs
+
+    @pytest.mark.parametrize("retries", [0, 1, 5])
+    def test_value_is_passed_to_the_arp_sweep(self, retries: int) -> None:
+        assert self._run("--retries", str(retries)).call_args.kwargs["retries"] == retries
+
+    @pytest.mark.parametrize("value", ["-1", "6", "99"])
+    def test_out_of_range_is_an_error(self, value: str, capsys: pytest.CaptureFixture) -> None:
+        with mock.patch(f"{_M}.scan_network") as mock_scan, pytest.raises(SystemExit) as exc:
+            run_main(["--network", "192.168.1.0/24", "--retries", value])
+        assert exc.value.code == 2
+        assert "--retries must be between 0 and 5" in capsys.readouterr().err
+        mock_scan.assert_not_called()
+
+    def test_gentle_scan_accepts_it_silently(self) -> None:
+        # gentle mode ignores retries (documented) - it must not be an error
+        assert self._run("--gentle-scan", "--retries", "3").call_args.kwargs["gentle"] is True
+
+
+class _StopWatching(BaseException):
+    """Raised by the fake sleep to end watch mode after N cycles."""
+
+
+class TestWatchMode:
+    _GW: typing.ClassVar[dict[str, str]] = {"ip": "192.168.1.1", "mac": "aa:aa:aa:aa:aa:01"}
+    _PC: typing.ClassVar[dict[str, str]] = {"ip": "192.168.1.20", "mac": "aa:aa:aa:aa:aa:20"}
+    _NEW: typing.ClassVar[dict[str, str]] = {"ip": "192.168.1.99", "mac": "de:ad:be:ef:00:99"}
+    _SPOOF: typing.ClassVar[dict[str, str]] = {"ip": "192.168.1.1", "mac": "de:ad:be:ef:00:01"}
+
+    def _watch(self, cycles, tmp_path, *flags, sleeps=None):
+        """Run `--watch` over the given per-cycle scan results against a real
+        history file. Ctrl-C (KeyboardInterrupt) arrives after the last cycle."""
+        history = tmp_path / "history.json"
+        remaining = list(cycles)
+        sleeps = sleeps if sleeps is not None else []
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            if not remaining:
+                raise KeyboardInterrupt
+
+        with (
+            mock.patch(f"{_M}.scan_network", side_effect=lambda *a, **k: remaining.pop(0)),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.get_default_gateway", return_value="192.168.1.1"),
+            mock.patch("time.sleep", fake_sleep),
+        ):
+            code = run_main(
+                [
+                    "--network",
+                    "192.168.1.0/24",
+                    "--watch",
+                    "30",
+                    "--history-file",
+                    str(history),
+                    *flags,
+                ]
+            )
+        return code, history
+
+    def test_first_scan_records_a_baseline_and_alerts_nothing(self, tmp_path, capsys) -> None:
+        code, _ = self._watch([[self._GW, self._PC]], tmp_path)
+        out = capsys.readouterr().out
+
+        assert code == 0
+        assert "baseline recorded" in out
+        assert "[!]" not in out
+        assert "Stopped watching" in out
+
+    def test_a_new_device_raises_an_alert(self, tmp_path, capsys) -> None:
+        self._watch([[self._GW, self._PC], [self._GW, self._PC, self._NEW]], tmp_path)
+        out = capsys.readouterr().out
+
+        assert "1 alert(s)" in out
+        assert "NEW DEVICE" in out
+        assert "192.168.1.99" in out
+
+    def test_a_quiet_cycle_reports_zero_alerts(self, tmp_path, capsys) -> None:
+        self._watch([[self._GW, self._PC], [self._GW, self._PC]], tmp_path)
+        assert "2 devices, 0 alert(s)" in capsys.readouterr().out
+
+    def test_the_gateway_changing_mac_is_called_out(self, tmp_path, capsys) -> None:
+        self._watch([[self._GW, self._PC], [self._SPOOF, self._PC]], tmp_path)
+        out = capsys.readouterr().out
+
+        assert "GATEWAY MAC CHANGED" in out
+        assert "192.168.1.1" in out
+
+    def test_a_device_seen_once_is_not_new_when_it_returns(self, tmp_path, capsys) -> None:
+        self._watch([[self._GW, self._PC], [self._GW], [self._GW, self._PC]], tmp_path)
+        assert "NEW DEVICE" not in capsys.readouterr().out
+
+    def test_every_cycle_is_saved_to_history(self, tmp_path) -> None:
+        import json
+
+        _, history = self._watch([[self._GW], [self._GW, self._NEW]], tmp_path)
+        entry = json.loads(history.read_text())["192.168.1.0/24"]
+
+        assert [d["ip"] for d in entry["devices"]] == ["192.168.1.1", "192.168.1.99"]
+        assert "de:ad:be:ef:00:99" in entry["known_devices"]
+
+    def test_sleeps_for_the_requested_interval(self, tmp_path) -> None:
+        sleeps: list[float] = []
+        self._watch([[self._GW], [self._GW]], tmp_path, sleeps=sleeps)
+        assert sleeps == [30.0, 30.0]  # after each of the 2 cycles; Ctrl-C lands in the 2nd
+
+    def test_port_scan_flags_apply_to_every_cycle(self, tmp_path) -> None:
+        history = tmp_path / "history.json"
+        remaining = [[dict(self._GW)], [dict(self._GW)]]
+
+        def fake_sleep(seconds):
+            if not remaining:
+                raise KeyboardInterrupt
+
+        with (
+            mock.patch(f"{_M}.scan_network", side_effect=lambda *a, **k: remaining.pop(0)),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.get_default_gateway", return_value=None),
+            mock.patch(f"{_M}.scan_devices_ports") as mock_ports,
+            mock.patch("time.sleep", fake_sleep),
+        ):
+            run_main(
+                [
+                    "--network",
+                    "192.168.1.0/24",
+                    "--watch",
+                    "10",
+                    "--scan-ports",
+                    "--history-file",
+                    str(history),
+                ]
+            )
+
+        assert mock_ports.call_count == 2
+
+    def test_no_gateway_is_mentioned_once(self, tmp_path, capsys) -> None:
+        remaining = [[dict(self._GW)]]
+
+        def fake_sleep(seconds):
+            raise KeyboardInterrupt
+
+        with (
+            mock.patch(f"{_M}.scan_network", side_effect=lambda *a, **k: remaining.pop(0)),
+            mock.patch(f"{_M}.enrich_devices"),
+            mock.patch(f"{_M}.get_default_gateway", return_value=None),
+            mock.patch("time.sleep", fake_sleep),
+        ):
+            run_main(
+                [
+                    "--network",
+                    "192.168.1.0/24",
+                    "--watch",
+                    "10",
+                    "--history-file",
+                    str(tmp_path / "h.json"),
+                ]
+            )
+        assert "No default gateway found" in capsys.readouterr().out
+
+    def test_a_permission_failure_ends_the_watch_with_exit_code_1(self, tmp_path) -> None:
+        with (
+            mock.patch(
+                f"{_M}.scan_network", side_effect=PermissionError("Operation not permitted")
+            ),
+            mock.patch(f"{_M}.get_default_gateway", return_value=None),
+            mock.patch("time.sleep") as mock_sleep,
+        ):
+            code = run_main(
+                [
+                    "--network",
+                    "192.168.1.0/24",
+                    "--watch",
+                    "10",
+                    "--history-file",
+                    str(tmp_path / "h.json"),
+                ]
+            )
+        assert code == 1
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("flags", "message"),
+        [
+            (["--watch", "1"], "at least 5 seconds"),
+            (["--watch", "10", "--no-history"], "--no-history"),
+            (["--watch", "10", "--output", "x.csv"], "--output or --stream-jsonl"),
+            (["--watch", "10", "--stream-jsonl"], "--output or --stream-jsonl"),
+        ],
+    )
+    def test_invalid_combinations_fail_before_scanning(self, flags, message, capsys) -> None:
+        with mock.patch(f"{_M}.scan_network") as mock_scan, pytest.raises(SystemExit) as exc:
+            run_main(["--network", "192.168.1.0/24", *flags])
+        assert exc.value.code == 2
+        assert message in capsys.readouterr().err
+        mock_scan.assert_not_called()

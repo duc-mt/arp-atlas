@@ -40,6 +40,60 @@ def load_history(path: str) -> dict[str, Any]:
         return {}
 
 
+def _mac_key(mac: Any) -> str:
+    return str(mac).lower()
+
+
+def known_device_macs(entry: dict[str, Any] | None) -> set[str]:
+    """Every MAC ever recorded for a network, from its history entry.
+
+    Uses the `known_devices` registry, which outlives a device's absence
+    from any single scan. A history file written before the registry
+    existed only has the last scan's devices, so those stand in. Returns
+    an empty set for a network that has never been scanned (entry None).
+    """
+    if not entry:
+        return set()
+    registry = entry.get("known_devices")
+    if registry is not None:
+        return set(registry)
+    return {_mac_key(d["mac"]) for d in entry.get("devices", []) if d.get("mac")}
+
+
+def _update_known_devices(
+    previous_entry: dict[str, Any] | None,
+    devices: list[dict[str, Any]],
+    now: str,
+) -> dict[str, dict[str, str]]:
+    """The registry of MAC -> {first_seen, last_seen} after a scan.
+
+    Carries forward every MAC seen before (a device that was off during
+    this scan keeps its first_seen, so it isn't "new" when it returns),
+    and stamps last_seen on the ones present now. For an entry that
+    predates the registry, the previous scan's devices are seeded with
+    that scan's timestamp - the earliest moment known for them.
+    """
+    known: dict[str, dict[str, str]] = {}
+    if previous_entry:
+        existing = previous_entry.get("known_devices")
+        if existing is not None:
+            known = {mac: dict(times) for mac, times in existing.items()}
+        else:
+            seeded_at = previous_entry.get("timestamp") or now
+            for device in previous_entry.get("devices", []):
+                if device.get("mac"):
+                    known[_mac_key(device["mac"])] = {
+                        "first_seen": seeded_at,
+                        "last_seen": seeded_at,
+                    }
+    for device in devices:
+        if not device.get("mac"):
+            continue
+        entry = known.setdefault(_mac_key(device["mac"]), {"first_seen": now, "last_seen": now})
+        entry["last_seen"] = now
+    return known
+
+
 def save_scan(
     path: str,
     network: str,
@@ -48,6 +102,10 @@ def save_scan(
 ) -> None:
     """Persist `devices` as the new most-recent scan for `network`,
     leaving any other network's entry in the history file untouched.
+
+    Alongside the devices, the entry keeps a `known_devices` registry
+    (MAC -> first_seen/last_seen) that survives a device being absent
+    from a scan - see known_device_macs().
 
     Parameters
     ----------
@@ -61,9 +119,11 @@ def save_scan(
         Optional scan statistics (responded, no_response, wrong_iface).
     """
     history = load_history(path)
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     history[network] = {
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "timestamp": now,
         "devices": devices,
+        "known_devices": _update_known_devices(history.get(network), devices, now),
     }
     if stats:
         history[network]["stats"] = stats

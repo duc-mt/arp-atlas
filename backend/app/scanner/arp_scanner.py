@@ -16,10 +16,16 @@ from __future__ import annotations
 
 import ipaddress
 import random
+import threading
 import time
 from typing import Any
 
-from backend.app.config import DEFAULT_TIMEOUT, GENTLE_SCAN_JITTER
+from backend.app.config import DEFAULT_ARP_RETRIES, DEFAULT_TIMEOUT, GENTLE_SCAN_JITTER
+
+# How long to wait for the background ARP sniffer to come up before giving
+# up on a gentle sweep (it fails to start on e.g. a permissions error, and
+# the error is raised in its own thread where nothing would see it).
+_SNIFFER_START_TIMEOUT = 5.0
 
 
 def validate_network(network: str) -> str:
@@ -73,6 +79,7 @@ def scan_network(
     *,
     gentle: bool = False,
     jitter_range: tuple[float, float] = GENTLE_SCAN_JITTER,
+    retries: int = DEFAULT_ARP_RETRIES,
 ) -> list[dict[str, Any]]:
     """Send ARP requests to `network` and collect the replies.
 
@@ -93,12 +100,19 @@ def scan_network(
         at a time, in randomised order, with a small random delay
         between each - friendlier to switches/monitoring tuned to flag
         a burst of broadcasts as a storm or a sequential sweep as
-        suspicious, at the cost of a scan that takes roughly
-        `host_count * (timeout + jitter)` in the worst case instead of
-        one shared `timeout` window.
+        suspicious. Requests are paced by the jitter alone while one
+        background sniffer collects replies, so the sweep takes roughly
+        the sum of the jitters plus one `timeout` - it does not wait a
+        full `timeout` per host.
     jitter_range : tuple[float, float]
         (min, max) seconds to randomly wait between hosts in gentle
         mode. Ignored when `gentle` is False.
+    retries : int
+        How many times the normal (non-gentle) sweep re-sends requests
+        that got no reply; each retry costs one more `timeout` window
+        while hosts are still unanswered. 0 sends each request once.
+        Ignored in gentle mode, which would otherwise re-probe nearly
+        every host and defeat the point of pacing.
 
     Returns
     -------
@@ -112,22 +126,59 @@ def scan_network(
     if not gentle:
         arp_request = scapy.ARP(pdst=network)  # type: ignore[attr-defined]
         answered, _unanswered = scapy.srp(
-            broadcast / arp_request, timeout=timeout, verbose=False, iface=iface
+            broadcast / arp_request,
+            timeout=timeout,
+            retry=retries,
+            verbose=False,
+            iface=iface,
         )
         return [{"ip": packet[1].psrc, "mac": packet[1].hwsrc} for packet in answered]
 
     targets = list(network) if isinstance(network, list) else _expand_hosts(network)
     random.shuffle(targets)  # nosec B311 - scan pacing/ordering, not a security control
+    return _gentle_sweep(scapy, broadcast, targets, timeout, iface, jitter_range)
 
-    devices = []
-    last_index = len(targets) - 1
-    for index, ip in enumerate(targets):
-        arp_request = scapy.ARP(pdst=ip)  # type: ignore[attr-defined]
-        answered, _unanswered = scapy.srp(
-            broadcast / arp_request, timeout=timeout, verbose=False, iface=iface
-        )
-        for packet in answered:
-            devices.append({"ip": packet[1].psrc, "mac": packet[1].hwsrc})
-        if index != last_index:
-            time.sleep(random.uniform(*jitter_range))  # nosec B311 - pacing delay
-    return devices
+
+def _gentle_sweep(
+    scapy: Any,
+    broadcast: Any,
+    targets: list[str],
+    timeout: float,
+    iface: str | None,
+    jitter_range: tuple[float, float],
+) -> list[dict[str, Any]]:
+    """Send one ARP request per target, `jitter_range` apart, while a
+    background sniffer records the replies.
+
+    Doing the waiting in a sniffer rather than in a blocking `srp()` per
+    host is what keeps the sweep from costing `timeout` seconds per
+    address. Returns one dict per address that answered, in arrival
+    order; a second reply for the same address (from another MAC) is
+    ignored, like `srp()` which matches one answer per request.
+    """
+    wanted = set(targets)
+    replies: dict[str, str] = {}
+
+    def record(packet: Any) -> None:
+        if not packet.haslayer(scapy.ARP):
+            return
+        arp = packet[scapy.ARP]
+        if arp.op == 2 and arp.psrc in wanted and arp.psrc not in replies:  # 2 = is-at (reply)
+            replies[arp.psrc] = arp.hwsrc
+
+    started = threading.Event()
+    sniffer = scapy.AsyncSniffer(iface=iface, prn=record, store=False, started_callback=started.set)
+    sniffer.start()
+    try:
+        if not started.wait(_SNIFFER_START_TIMEOUT):
+            raise RuntimeError("the ARP reply sniffer did not start (raw-socket permissions?)")
+        last_index = len(targets) - 1
+        for index, ip in enumerate(targets):
+            scapy.sendp(broadcast / scapy.ARP(pdst=ip), iface=iface, verbose=False)
+            if index != last_index:
+                time.sleep(random.uniform(*jitter_range))  # nosec B311 - pacing delay
+        time.sleep(timeout)  # let the last replies come in
+    finally:
+        if sniffer.running:
+            sniffer.stop()
+    return [{"ip": ip, "mac": mac} for ip, mac in replies.items()]

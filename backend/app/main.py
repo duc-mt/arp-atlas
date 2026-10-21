@@ -19,6 +19,7 @@ from backend.app.models import NetworkDevice
 from backend.app.scanner.arp_scanner import scan_network, validate_network
 from backend.app.scanner.classifier import (
     classify_device,
+    classify_device_scored,
     parse_port_spec,
     scan_device_ports,
     scan_devices_ports,
@@ -31,19 +32,31 @@ from backend.app.server.server import run_dashboard
 from backend.app.services.conflict_service import find_ip_conflicts
 from backend.app.services.enrichment import enrich_devices, lookup_hostname, lookup_vendor
 from backend.app.services.export_service import export_devices
-from backend.app.services.history_service import diff_devices, load_history, save_scan
+from backend.app.services.history_service import (
+    diff_devices,
+    known_device_macs,
+    load_history,
+    save_scan,
+)
+from backend.app.services.network_utils import get_default_gateway
+from backend.app.services.watch_service import Alert, detect_changes
 
 __all__ = [
     "COMMON_PORTS",
     "DEFAULT_TIMEOUT",
     "HISTORY_FILE",
+    "Alert",
     "NetworkDevice",
     "async_scan_devices_ports",
     "classify_device",
+    "classify_device_scored",
+    "detect_changes",
     "diff_devices",
     "enrich_devices",
     "export_devices",
     "find_ip_conflicts",
+    "get_default_gateway",
+    "known_device_macs",
     "load_history",
     "lookup_hostname",
     "lookup_vendor",

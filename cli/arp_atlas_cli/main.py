@@ -15,20 +15,36 @@ Notes:         Requires Python 3.8+
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import sys
+import time
 from typing import Any
 
-from backend.app.config import DEFAULT_TIMEOUT, HISTORY_FILE
+from backend.app.config import (
+    DEFAULT_ARP_RETRIES,
+    DEFAULT_TIMEOUT,
+    HISTORY_FILE,
+    MAX_ARP_RETRIES,
+    MIN_WATCH_INTERVAL,
+)
 from backend.app.scanner.arp_scanner import scan_network, validate_network
 from backend.app.scanner.classifier import parse_port_spec, scan_devices_ports
 from backend.app.scanner.port_scanner_async import scan_devices_ports_async
 from backend.app.services.conflict_service import find_ip_conflicts
 from backend.app.services.enrichment import enrich_devices
 from backend.app.services.export_service import export_devices
-from backend.app.services.history_service import diff_devices, load_history, save_scan
+from backend.app.services.history_service import (
+    diff_devices,
+    known_device_macs,
+    load_history,
+    save_scan,
+)
+from backend.app.services.network_utils import get_default_gateway
+from backend.app.services.watch_service import detect_changes
 from cli.arp_atlas_cli.formatters import (
+    print_alerts,
     print_conflicts,
     print_diff,
     print_error,
@@ -192,6 +208,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "sequential sweep; takes much longer on large ranges.",
     )
     parser.add_argument(
+        "--retries",
+        type=int,
+        metavar="N",
+        help=f"How many times the normal ARP sweep re-sends requests that got no reply "
+        f"(default: {DEFAULT_ARP_RETRIES}, max {MAX_ARP_RETRIES}). Raises the chance of "
+        "finding devices on busy Wi-Fi or ones that are asleep, at the cost of one more "
+        "--timeout wait per retry. 0 sends each request once. Ignored by --gentle-scan.",
+    )
+    parser.add_argument(
+        "--watch",
+        type=float,
+        metavar="SECONDS",
+        help=f"Re-scan every SECONDS (minimum {MIN_WATCH_INTERVAL:g}) until Ctrl-C and alert "
+        "on a device never seen before on this network, or an address answering from a "
+        "different MAC than last time - the gateway's MAC changing is the classic ARP "
+        "spoofing sign. The first scan only records a baseline. Needs scan history.",
+    )
+    parser.add_argument(
         "--history-file",
         default=HISTORY_FILE,
         help=f"Where to persist scan history for diffing against future scans "
@@ -304,18 +338,42 @@ def _port_scan_options(args: argparse.Namespace, parser: argparse.ArgumentParser
     return options
 
 
-def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    """Run one CLI-mode scan and return a process exit code."""
-    try:
-        network = validate_network(args.network)
-    except ValueError:
-        parser.error(f"{args.network!r} is not a valid network address")
+def _arp_scan_kwargs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict[str, Any]:
+    """The keyword arguments for scan_network(), validated up front.
+    `retries` is only passed when given, so scan_network()'s own default
+    applies otherwise."""
+    kwargs: dict[str, Any] = {"timeout": args.timeout, "gentle": args.gentle_scan}
+    if args.retries is not None:
+        if not 0 <= args.retries <= MAX_ARP_RETRIES:
+            parser.error(f"--retries must be between 0 and {MAX_ARP_RETRIES}")
+        kwargs["retries"] = args.retries
+    return kwargs
 
-    port_options = _port_scan_options(args, parser)
 
-    devices = _scan_or_none(network, timeout=args.timeout, gentle=args.gentle_scan)
+def _check_watch_flags(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if args.watch is None:
+        return
+    if args.watch < MIN_WATCH_INTERVAL:
+        parser.error(f"--watch must be at least {MIN_WATCH_INTERVAL:g} seconds")
+    if args.no_history:
+        parser.error("--watch compares against scan history, so it can't be used with --no-history")
+    if args.output or args.stream_jsonl:
+        parser.error(
+            "--watch prints alerts, not results; it can't be used with --output or --stream-jsonl"
+        )
+
+
+def _collect_devices(
+    network: str,
+    args: argparse.Namespace,
+    port_options: dict[str, Any],
+    scan_kwargs: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    """One full pass: ARP sweep, conflict check, enrichment and (if asked)
+    the port scan. None if the sweep could not run (no privileges)."""
+    devices = _scan_or_none(network, **scan_kwargs)
     if devices is None:
-        return 1
+        return None
 
     conflicts = find_ip_conflicts(devices)
     if conflicts:
@@ -330,6 +388,65 @@ def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
             scan_devices_ports(
                 devices, method="syn" if args.syn_scan else "connect", **port_options
             )
+    return devices
+
+
+def _watch(
+    network: str,
+    args: argparse.Namespace,
+    port_options: dict[str, Any],
+    scan_kwargs: dict[str, Any],
+) -> int:
+    """Scan every `args.watch` seconds until Ctrl-C, alerting on changes."""
+    gateway_ip = get_default_gateway()
+    print(f"Watching {network} every {args.watch:g}s (Ctrl-C to stop).")
+    if gateway_ip is None:
+        print(
+            "No default gateway found - gateway MAC changes will be reported as plain MAC changes."
+        )
+
+    try:
+        while True:
+            devices = _collect_devices(network, args, port_options, scan_kwargs)
+            if devices is None:
+                return 1
+
+            entry = load_history(args.history_file).get(network)
+            previous_devices = entry["devices"] if entry else []
+            known = known_device_macs(entry)
+            alerts = detect_changes(previous_devices, devices, known, gateway_ip)
+            save_scan(args.history_file, network, devices)
+
+            stamp = datetime.datetime.now().strftime("%H:%M:%S")
+            if not previous_devices and not known:
+                print(f"[{stamp}] {len(devices)} devices found - baseline recorded.")
+            else:
+                print(f"[{stamp}] {len(devices)} devices, {len(alerts)} alert(s).")
+            print_alerts(alerts)
+
+            time.sleep(args.watch)
+    except KeyboardInterrupt:
+        print("\nStopped watching.")
+        return 0
+
+
+def run_cli(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Run one CLI-mode scan and return a process exit code."""
+    try:
+        network = validate_network(args.network)
+    except ValueError:
+        parser.error(f"{args.network!r} is not a valid network address")
+
+    port_options = _port_scan_options(args, parser)
+    scan_kwargs = _arp_scan_kwargs(args, parser)
+    _check_watch_flags(args, parser)
+
+    if args.watch is not None:
+        return _watch(network, args, port_options, scan_kwargs)
+
+    devices = _collect_devices(network, args, port_options, scan_kwargs)
+    if devices is None:
+        return 1
 
     if args.stream_jsonl:
         for device in devices:

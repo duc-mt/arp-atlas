@@ -134,6 +134,36 @@
             }
         }
         
+        const PHASE_LABELS = {starting: "Starting", arp: "ARP sweep", enrich: "Enriching", ports: "Port scan", saving: "Saving"};
+
+        // The scan request blocks until the scan finishes, so a second
+        // request polls /api/status to show what stage it has reached.
+        async function pollScanStatus(btn) {
+            try {
+                const response = await fetch('/api/status', {cache: 'no-store'});
+                const status = await response.json();
+                if (!status.scanning || !btn.disabled) return;
+                let label = PHASE_LABELS[status.phase] || "Scanning";
+                if (status.phase === "ports" && status.ports_total) {
+                    label += ` ${status.ports_done}/${status.ports_total}`;
+                }
+                btn.innerText = `${label} · ${Math.round(status.elapsed)}s`;
+            } catch (e) { /* a missed poll is harmless - try again next tick */ }
+        }
+
+        function readScanOptions() {
+            const options = {};
+            const ports = document.getElementById('opt-ports').value.trim();
+            const timeout = document.getElementById('opt-timeout').value.trim();
+            const retries = document.getElementById('opt-retries').value.trim();
+            if (ports) options.ports = ports;
+            if (timeout) options.timeout = Number(timeout);
+            if (retries) options.retries = Number(retries);
+            options.snmp = document.getElementById('opt-snmp').checked;
+            options.gentle = document.getElementById('opt-gentle').checked;
+            return options;
+        }
+
         async function triggerScan() {
             const target = document.getElementById('scan-target').value.trim();
             const iface = document.getElementById('iface-select').value;
@@ -143,12 +173,14 @@
             btn.disabled = true;
             btn.innerText = "Scanning...";
             btn.classList.add("opacity-50");
+            document.getElementById('scan-options').removeAttribute('open');
+            const poller = setInterval(() => pollScanStatus(btn), 1000);
             
             try {
                 const response = await fetch('/api/scan', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({target: target, iface: iface, scan_ports: scanPorts})
+                    body: JSON.stringify({target: target, iface: iface, scan_ports: scanPorts, ...readScanOptions()})
                 });
                 const result = await response.json();
                 if (response.ok) {
@@ -161,9 +193,10 @@
             } catch (error) {
                 alert("Failed to trigger scan");
             } finally {
+                clearInterval(poller);
                 btn.disabled = false;
                 btn.classList.remove("opacity-50");
-                if (btn.innerText === "Scanning...") {
+                if (btn.innerText !== "Success!") {
                     btn.innerText = "Scan Network";
                 }
             }
@@ -578,6 +611,32 @@
                     <label class="flex items-center text-text text-xs font-medium cursor-pointer select-none">
                         <input type="checkbox" id="scan-ports" class="mr-1.5 accent-sky-500 rounded"> Scan Ports
                     </label>
+                    <details id="scan-options" class="relative">
+                        <summary class="list-none cursor-pointer select-none text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-text hover:border-accent transition-colors">Options</summary>
+                        <div class="absolute right-0 mt-2 w-72 z-50 p-4 rounded-card bg-panel border border-border shadow-2xl space-y-3">
+                            <div>
+                                <label for="opt-ports" class="block mb-1 text-xs uppercase tracking-widest text-muted font-mono">Ports</label>
+                                <input type="text" id="opt-ports" placeholder="common | quick | 22,80,8000-8010" class="w-full text-xs px-3 py-1.5 rounded-control bg-panel-alt border border-border text-text font-mono focus:outline-none focus:border-accent placeholder-muted transition-colors">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label for="opt-timeout" class="block mb-1 text-xs uppercase tracking-widest text-muted font-mono">Timeout (s)</label>
+                                    <input type="number" id="opt-timeout" min="0.1" max="30" step="0.1" placeholder="1.0" class="w-full text-xs px-3 py-1.5 rounded-control bg-panel-alt border border-border text-text font-mono focus:outline-none focus:border-accent placeholder-muted transition-colors">
+                                </div>
+                                <div>
+                                    <label for="opt-retries" class="block mb-1 text-xs uppercase tracking-widest text-muted font-mono">Retries</label>
+                                    <input type="number" id="opt-retries" min="0" max="5" step="1" placeholder="1" class="w-full text-xs px-3 py-1.5 rounded-control bg-panel-alt border border-border text-text font-mono focus:outline-none focus:border-accent placeholder-muted transition-colors">
+                                </div>
+                            </div>
+                            <label class="flex items-center text-text text-xs font-medium cursor-pointer select-none">
+                                <input type="checkbox" id="opt-snmp" class="mr-1.5 accent-sky-500 rounded"> SNMP probe (UDP/161)
+                            </label>
+                            <label class="flex items-center text-text text-xs font-medium cursor-pointer select-none">
+                                <input type="checkbox" id="opt-gentle" class="mr-1.5 accent-sky-500 rounded"> Gentle scan
+                            </label>
+                            <p class="text-xs text-muted leading-relaxed">Ports và SNMP chỉ áp dụng khi bật Scan Ports. Gentle quét từng host với độ trễ ngẫu nhiên nên bỏ qua Retries; bỏ trống ô nào thì dùng giá trị mặc định.</p>
+                        </div>
+                    </details>
                     <button onclick="triggerScan()" id="scan-btn" class="text-xs px-4 py-1.5 rounded-control bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-medium shadow-sm transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:translate-y-0">Scan Network</button>
                     
                     <button onclick="clearHistory()" class="text-xs px-3 py-1.5 rounded-control border border-border text-muted hover:text-offline hover:border-offline transition-colors">Clear</button>

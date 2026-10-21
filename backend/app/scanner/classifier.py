@@ -15,11 +15,17 @@ Notes:         Requires Python 3.8+
 from __future__ import annotations
 
 import concurrent.futures
+import re
 import secrets
 import socket
 from typing import Any
 
 from backend.app.config import COMMON_PORTS, MAX_SCAN_WORKERS, PORT_PRESETS, SNMP_PORT
+
+# Source-port range for the SYN scan's batch: the unprivileged ephemeral
+# range, so replies can't be mistaken for traffic to a well-known port.
+_SYN_SOURCE_PORT_MIN = 40000
+_SYN_SOURCE_PORT_SPAN = 20000
 
 
 def _parse_port(text: str) -> int:
@@ -120,13 +126,19 @@ def snmp_probe(
 
 
 def _tcp_syn_scan(ip: str, ports: list[int], timeout: float) -> list[int]:
-    """Half-open (SYN) scan: send a bare SYN per port, record it as
-    open on a SYN+ACK, then tear the attempt down ourselves with a RST
-    before a full handshake ever completes - the same technique nmap's
-    default privileged scan (`-sS`) uses. Lower overhead per port than
-    `scan_device_ports`'s TCP-connect probe, and the target's own
+    """Half-open (SYN) scan: send a bare SYN to every port in one batch,
+    record each SYN+ACK as open, then tear those attempts down ourselves
+    with a RST before a full handshake ever completes - the same technique
+    nmap's default privileged scan (`-sS`) uses. Lower overhead per port
+    than `scan_device_ports`'s TCP-connect probe, and the target's own
     application never sees an established connection (so e.g. an HTTP
     or SSH access log never gets a line for it).
+
+    All the SYNs go out in a single `sr()` call, so `timeout` is one wait
+    for the whole port list rather than one per port - a host that
+    silently drops packets costs `timeout`, not `len(ports) * timeout`.
+    One source port is used for the whole batch; replies are told apart
+    by the port they came from.
 
     Needs raw-socket privileges, same as the ARP sweep this tool
     already requires - no new privilege footprint for callers that
@@ -134,23 +146,31 @@ def _tcp_syn_scan(ip: str, ports: list[int], timeout: float) -> list[int]:
     """
     import scapy.all as scapy  # type: ignore[import-untyped]
 
-    open_ports: list[int] = []
-    for port in ports:
-        syn = scapy.IP(dst=ip) / scapy.TCP(dport=port, flags="S")  # type: ignore[attr-defined]
-        response = scapy.sr1(syn, timeout=timeout, verbose=False)
-        if response is None or not response.haslayer(scapy.TCP):  # type: ignore[attr-defined]
+    if not ports:
+        return []
+
+    sport = _SYN_SOURCE_PORT_MIN + secrets.randbelow(_SYN_SOURCE_PORT_SPAN)
+    syns = scapy.IP(dst=ip) / scapy.TCP(sport=sport, dport=list(ports), flags="S")  # type: ignore[attr-defined]
+    answered, _unanswered = scapy.sr(syns, timeout=timeout, verbose=False)
+
+    open_set: set[int] = set()
+    resets = []
+    for sent, received in answered:
+        if not received.haslayer(scapy.TCP):  # type: ignore[attr-defined]
             continue
-        tcp_layer = response.getlayer(scapy.TCP)  # type: ignore[attr-defined]
-        if (
-            tcp_layer is None or tcp_layer.flags != 0x12
-        ):  # SYN+ACK only - anything else isn't "open"
+        tcp_layer = received.getlayer(scapy.TCP)  # type: ignore[attr-defined]
+        # SYN+ACK only - anything else (RST, RST+ACK, ...) isn't "open"
+        if tcp_layer is None or tcp_layer.flags != 0x12:
             continue
-        open_ports.append(port)
-        rst = scapy.IP(dst=ip) / scapy.TCP(  # type: ignore[attr-defined]
-            dport=port, flags="R", seq=tcp_layer.ack
+        port = sent[scapy.TCP].dport  # type: ignore[attr-defined]
+        open_set.add(port)
+        resets.append(
+            scapy.IP(dst=ip)  # type: ignore[attr-defined]
+            / scapy.TCP(sport=sport, dport=port, flags="R", seq=tcp_layer.ack)  # type: ignore[attr-defined]
         )
-        scapy.send(rst, verbose=False)
-    return open_ports
+    if resets:
+        scapy.send(resets, verbose=False)
+    return [port for port in ports if port in open_set]  # keep the order given
 
 
 def _tcp_connect_scan(ip: str, ports: list[int], timeout: float) -> list[int]:
@@ -212,21 +232,71 @@ def scan_device_ports(
     return open_ports
 
 
-def classify_device(vendor: str | None, open_ports: list[int]) -> str:
-    """A rough, best-effort guess at a device's role from its vendor
-    name and open ports.
+# Hostname hints. A device's own name is often a stronger clue than a
+# single open port, but names are free text, so a hint is worth less than
+# a strong port signature (+5): it can settle a tie or a weak guess, never
+# override a camera/printer port. Matched against the hostname's
+# alphanumeric tokens ("ap-lobby" -> "ap", "lobby") or, for default names
+# that fuse a prefix to a serial number, against token prefixes.
+_HOSTNAME_HINT_POINTS = 3
 
-    Parameters
-    ----------
-    vendor : str or None
-        As returned by lookup_vendor().
-    open_ports : list[int]
-        As returned by scan_device_ports().
+_HOSTNAME_TOKEN_HINTS: dict[str, frozenset[str]] = {
+    "ip camera": frozenset(
+        {"cam", "ipcam", "camera", "nvr", "dvr", "hikvision", "dahua", "reolink", "annke"}
+    ),
+    "printer": frozenset(
+        {"printer", "laserjet", "officejet", "deskjet", "mfc", "pixma", "lexmark", "kyocera"}
+    ),
+    "access point": frozenset({"ap", "uap", "unifi", "wap"}),
+    "router/switch": frozenset(
+        {"sw", "switch", "rtr", "router", "gw", "gateway", "fw", "firewall"}
+    ),
+    "smart home device": frozenset(
+        {"esp", "esp32", "esp8266", "tasmota", "shelly", "sonoff", "tuya", "homeassistant"}
+    ),
+    "linux host": frozenset({"raspberrypi", "ubuntu", "debian"}),
+    "server": frozenset({"nas", "proxmox", "pve", "synology", "truenas", "docker", "k8s"}),
+}
 
-    Returns
-    -------
-    str
-        One of the categorized roles or "unknown".
+# (prefix, role) for factory-default names like DESKTOP-AB12CD3 or BRN30055C1234,
+# where the model number or serial is fused to the prefix.
+_HOSTNAME_PREFIX_HINTS: tuple[tuple[str, str], ...] = (
+    ("desktop-", "windows host"),
+    ("laptop-", "windows host"),
+    ("win-", "windows host"),
+    ("brn", "printer"),  # Brother default
+    ("npi", "printer"),  # HP default
+    ("shelly", "smart home device"),  # shelly1-AABBCC, shellyplug-s-AABBCC, ...
+)
+
+_ROUTER_NAME = re.compile(r"r\d+")  # R1, R2 ... in lab/NOC naming
+
+
+def _hostname_hints(hostname: str | None) -> set[str]:
+    """The roles a hostname hints at (empty if it says nothing)."""
+    if not hostname:
+        return set()
+    name = hostname.strip().lower().split(".")[0]  # drop the domain part
+    tokens = [t for t in re.split(r"[^a-z0-9]+", name) if t]
+    roles = {
+        role for role, words in _HOSTNAME_TOKEN_HINTS.items() if any(t in words for t in tokens)
+    }
+    roles.update(role for prefix, role in _HOSTNAME_PREFIX_HINTS if name.startswith(prefix))
+    if any(_ROUTER_NAME.fullmatch(t) for t in tokens):
+        roles.add("router/switch")
+    return roles
+
+
+def classify_device_scored(
+    vendor: str | None, open_ports: list[int], hostname: str | None = None
+) -> tuple[str, int]:
+    """Like classify_device(), but also returns how strongly the winning
+    role was supported.
+
+    The score is the winning role's raw points: 5 or more is a strong
+    signature (e.g. a camera or printer port), 3-4 a solid combination,
+    1-2 a weak hint. A role of "unknown" - no evidence, or a tie - has
+    score 0.
     """
     vendor_lower = (vendor or "").lower()
     ports = set(open_ports or [])
@@ -299,18 +369,45 @@ def classify_device(vendor: str | None, open_ports: list[int]) -> str:
         else:
             scores["router/switch"] += 2
 
+    for role in _hostname_hints(hostname):
+        scores[role] += _HOSTNAME_HINT_POINTS
+
     best_category = max(scores, key=scores.__getitem__)
     best_score = scores[best_category]
 
     if best_score == 0:
-        return "unknown"
+        return "unknown", 0
 
     # Guard against ties
     top_categories = [c for c, s in scores.items() if s == best_score]
     if len(top_categories) > 1:
-        return "unknown"
+        return "unknown", 0
 
-    return best_category
+    return best_category, best_score
+
+
+def classify_device(vendor: str | None, open_ports: list[int], hostname: str | None = None) -> str:
+    """A rough, best-effort guess at a device's role from its vendor
+    name, open ports and (optionally) hostname.
+
+    Parameters
+    ----------
+    vendor : str or None
+        As returned by lookup_vendor().
+    open_ports : list[int]
+        As returned by scan_device_ports().
+    hostname : str or None
+        As set by enrich_devices(). A name like "ESP_1A2B3C" or
+        "DESKTOP-AB12CD3" settles ties and weak guesses, but never
+        outweighs a strong port signature. Omitting it gives the same
+        result as before hostnames were considered.
+
+    Returns
+    -------
+    str
+        One of the categorized roles or "unknown".
+    """
+    return classify_device_scored(vendor, open_ports, hostname)[0]
 
 
 def scan_devices_ports(
@@ -339,7 +436,7 @@ def scan_devices_ports(
     def _scan(device: dict[str, Any]) -> dict[str, Any]:
         open_ports = scan_device_ports(device["ip"], ports, timeout, method=method, snmp=snmp)
         device["open_ports"] = open_ports
-        device["role"] = classify_device(device.get("vendor"), open_ports)
+        device["role"] = classify_device(device.get("vendor"), open_ports, device.get("hostname"))
         return device
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:

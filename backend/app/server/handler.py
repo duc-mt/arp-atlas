@@ -18,21 +18,35 @@ import http.server
 import json
 import os
 import socketserver
+import threading
+import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 # Load dashboard HTML relative to this file (frontend/dashboard.html)
 _FRONTEND_DIR = Path(__file__).resolve().parents[3] / "frontend"
 _DASHBOARD_HTML_PATH = _FRONTEND_DIR / "dashboard.html"
 
+import html
 import logging
 import re
 import shutil
 import socket
 import struct
 import subprocess  # nosec B404
+from dataclasses import dataclass
+
+from backend.app.config import DEFAULT_ARP_RETRIES, DEFAULT_TIMEOUT, MAX_ARP_RETRIES
+from backend.app.scanner.classifier import parse_port_spec
 
 logger = logging.getLogger(__name__)
+
+# The dashboard only ever binds to loopback, so these are the only Host
+# values a legitimate request carries. Anything else is either a mistake
+# or a DNS-rebinding attempt: a hostile page pointing its own domain at
+# 127.0.0.1 so the browser treats this server as same-origin for it.
+_ALLOWED_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "[::1]"})
 
 # Maximum number of addresses a single scan request may expand to (applies
 # to both "start-end" ranges and plain CIDR input). Without a cap, a
@@ -117,6 +131,111 @@ def _parse_target(target_input: str) -> tuple[list[str], str]:
     return target_ips, network_str
 
 
+@dataclass(frozen=True)
+class ScanOptions:
+    """Validated scan settings from a POST /api/scan body."""
+
+    timeout: float = DEFAULT_TIMEOUT
+    retries: int = DEFAULT_ARP_RETRIES
+    gentle: bool = False
+    ports: list[int] | None = None
+    snmp: bool = False
+
+
+def _parse_options(data: dict[str, Any]) -> ScanOptions:
+    """Validate the optional scan settings in a request body.
+
+    Missing or empty values mean "use the default". `ports` and `snmp`
+    only matter when `scan_ports` is on, so they are ignored otherwise.
+    Raises ValueError with a message fit to show the user.
+    """
+    raw_timeout = data.get("timeout")
+    timeout = DEFAULT_TIMEOUT
+    if raw_timeout is not None and raw_timeout != "":
+        try:
+            timeout = float(raw_timeout)
+        except (TypeError, ValueError):
+            raise ValueError("timeout must be a number of seconds") from None
+        if not 0.1 <= timeout <= 30:
+            raise ValueError("timeout must be between 0.1 and 30 seconds")
+
+    raw_retries = data.get("retries")
+    retries = DEFAULT_ARP_RETRIES
+    if raw_retries is not None and raw_retries != "":
+        try:
+            retries = int(raw_retries)
+        except (TypeError, ValueError):
+            raise ValueError("retries must be a whole number") from None
+        if not 0 <= retries <= MAX_ARP_RETRIES:
+            raise ValueError(f"retries must be between 0 and {MAX_ARP_RETRIES}")
+
+    scan_ports = bool(data.get("scan_ports", False))
+    ports = None
+    spec = str(data.get("ports") or "").strip()
+    if scan_ports and spec:
+        try:
+            ports = parse_port_spec(spec)
+        except ValueError as e:
+            raise ValueError(f"ports: {e}") from None
+
+    return ScanOptions(
+        timeout=timeout,
+        retries=retries,
+        gentle=bool(data.get("gentle", False)),
+        ports=ports,
+        snmp=scan_ports and bool(data.get("snmp", False)),
+    )
+
+
+class ScanState:
+    """Single-slot scan lock plus a progress snapshot for GET /api/status.
+
+    Only one scan may run at a time: they all use the same raw sockets
+    and write the same history file. The server is threaded, so a scan
+    in progress no longer blocks other requests - this is what lets the
+    page poll for progress, and what turns a second click into a clear
+    409 instead of a queue.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._info: dict[str, Any] = {}
+        self._started = 0.0
+
+    def try_begin(self) -> bool:
+        if not self._lock.acquire(blocking=False):
+            return False
+        self._started = time.monotonic()
+        self._info = {"phase": "starting", "ports_done": 0, "ports_total": 0}
+        return True
+
+    def set_phase(self, phase: str) -> None:
+        self._info = {**self._info, "phase": phase}
+
+    def progress(self, done: int, total: int, device: Any = None) -> None:
+        """Port-scan progress. Shaped to be passed straight to
+        scan_devices_ports() as its progress_callback, which also hands
+        over the device it just finished."""
+        self._info = {**self._info, "ports_done": done, "ports_total": total}
+
+    def end(self) -> None:
+        self._info = {}
+        self._lock.release()
+
+    def snapshot(self) -> dict[str, Any]:
+        info = self._info
+        if not info:
+            return {"scanning": False}
+        return {
+            "scanning": True,
+            "elapsed": round(time.monotonic() - self._started, 1),
+            **info,
+        }
+
+
+SCAN_STATE = ScanState()
+
+
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     """Minimal HTTP handler: serves the dashboard UI and exposes two
     API endpoints — POST /api/scan and POST /api/clear.
@@ -129,7 +248,35 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _forbid_unless_local(self) -> bool:
+        """Reject requests that did not come from this dashboard's own page.
+
+        POST /api/scan runs as whoever started the dashboard - usually
+        root, for the raw sockets - and /api/clear deletes the history, so
+        a page the user happens to have open in another tab must not be
+        able to fire them (browsers send cross-site POSTs, and `text/plain`
+        ones need no preflight). Browsers always attach Origin to a POST,
+        so requiring it to match Host closes that hole; clients that send
+        no Origin (curl, scripts) are not a browser attack and pass. The
+        Host check closes DNS rebinding. Returns True (after replying 403)
+        if the request was refused.
+        """
+        host = self.headers.get("Host", "")
+        hostname = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+        origin = self.headers.get("Origin")
+        fetch_site = self.headers.get("Sec-Fetch-Site")
+        if (
+            hostname.lower() not in _ALLOWED_HOSTNAMES
+            or (origin is not None and urlsplit(origin).netloc != host)
+            or fetch_site == "cross-site"
+        ):
+            self._json_response(403, {"status": "error", "message": "forbidden"})
+            return True
+        return False
+
     def do_POST(self) -> None:
+        if self._forbid_unless_local():
+            return
         if self.path == "/api/scan":
             self._handle_scan()
         elif self.path == "/api/clear":
@@ -146,15 +293,33 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         from backend.app.scanner.classifier import scan_devices_ports
         from backend.app.services.enrichment import enrich_devices
         from backend.app.services.history_service import save_scan
+        from backend.app.services.network_utils import get_default_gateway
 
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length)
+
+        # A JSON content type can't be sent cross-site without a CORS
+        # preflight, which this server never approves - a second layer
+        # beside the Origin check.
+        content_type = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            self._json_response(
+                415, {"status": "error", "message": "Content-Type must be application/json"}
+            )
+            return
+
+        if not SCAN_STATE.try_begin():
+            self._json_response(
+                409, {"status": "error", "message": "A scan is already running - please wait."}
+            )
+            return
 
         try:
             data = json.loads(post_data.decode("utf-8"))
             target_input = data.get("target", "").strip()
             iface = data.get("iface")
             scan_ports = data.get("scan_ports", False)
+            options = _parse_options(data)
 
             if not target_input and iface:
                 for ifc in scapy.get_working_ifaces():
@@ -169,7 +334,14 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if iface:
                 network_str += f" on {iface}"
 
-            devices = scan_network(target_ips, iface=iface)
+            SCAN_STATE.set_phase("arp")
+            devices = scan_network(
+                target_ips,
+                timeout=options.timeout,
+                iface=iface,
+                gentle=options.gentle,
+                retries=options.retries,
+            )
 
             # Count IPs that belong to a different interface (no ARP response expected)
             responded_ips = {d.get("ip") for d in devices}
@@ -191,25 +363,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "no_response": no_response,
             }
 
+            SCAN_STATE.set_phase("enrich")
             enrich_devices(devices)
 
-            gw_ip = None
-            if iface:
-                for route_entry in scapy.conf.route.routes:
-                    if route_entry[0] == 0:
-                        ifc_entry = route_entry[3]
-                        ifc_name = ifc_entry.name if hasattr(ifc_entry, "name") else str(ifc_entry)
-                        if ifc_name == iface:
-                            gw_ip = route_entry[2]
-                            break
-
+            gw_ip = get_default_gateway(iface) if iface else None
             for d in devices:
                 if gw_ip and d.get("ip") == gw_ip:
                     d["is_gateway"] = True
 
             if scan_ports:
-                scan_devices_ports(devices)
+                SCAN_STATE.set_phase("ports")
+                port_kwargs: dict[str, Any] = {"progress_callback": SCAN_STATE.progress}
+                if options.ports is not None:
+                    port_kwargs["ports"] = options.ports
+                if options.snmp:
+                    port_kwargs["snmp"] = True
+                scan_devices_ports(devices, **port_kwargs)
 
+            SCAN_STATE.set_phase("saving")
             save_scan(HISTORY_FILE, network_str, devices, stats=stats)
 
             self._json_response(
@@ -218,6 +389,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             )
         except Exception as e:
             self._json_response(500, {"status": "error", "message": str(e)})
+        finally:
+            SCAN_STATE.end()
 
     def _handle_clear(self) -> None:
         from backend.app.config import HISTORY_FILE
@@ -230,8 +403,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response(500, {"status": "error", "message": str(e)})
 
     def do_GET(self) -> None:
+        if self._forbid_unless_local():
+            return
         if self.path == "/":
             self._serve_dashboard()
+        elif self.path == "/api/status":
+            self._json_response(200, SCAN_STATE.snapshot())
         elif self.path.startswith("/scan_history.json"):
             self._serve_history()
         else:
@@ -274,10 +451,17 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     subnet_str = str(net)
                 except Exception:
                     subnet_str = f"{iface.ip}/{mask}"
-            iface_options += f'<option value="{iface.name}" data-subnet="{subnet_str}"{selected}>{iface.name} ({iface.ip})</option>'
+            # Interface names/addresses come from the OS, but they still go
+            # into markup - escape them like any other interpolated value.
+            name = html.escape(str(iface.name), quote=True)
+            subnet = html.escape(subnet_str, quote=True)
+            addr = html.escape(str(iface.ip), quote=True)
+            iface_options += (
+                f'<option value="{name}" data-subnet="{subnet}"{selected}>{name} ({addr})</option>'
+            )
 
-        html = DASHBOARD_HTML.replace("<!-- IFACE_OPTIONS -->", iface_options)
-        body = html.encode("utf-8")
+        page = DASHBOARD_HTML.replace("<!-- IFACE_OPTIONS -->", iface_options)
+        body = page.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-type", "text/html")
         self.end_headers()
@@ -302,5 +486,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-class ReuseTCPServer(socketserver.TCPServer):
+class ReuseTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """Threaded, so a scan in progress doesn't stop the page, the history
+    file or GET /api/status from being served. Request threads are daemons:
+    Ctrl-C shouldn't wait on a scan that is still running."""
+
     allow_reuse_address = True
+    daemon_threads = True

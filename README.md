@@ -149,6 +149,12 @@ $ sudo python main.py --network 192.168.1.0/24 --scan-ports
 $ sudo python main.py --network 192.168.1.0/24 --scan-ports --ports quick
 $ sudo python main.py --network 192.168.1.0/24 --scan-ports --ports 22,80,8000-8010
 
+# Re-send unanswered ARP requests more (or less) than the default once
+$ sudo python main.py --network 192.168.1.0/24 --retries 2
+
+# Keep watching: re-scan every 60 s and alert on new devices / MAC changes
+$ sudo python main.py --network 192.168.1.0/24 --watch 60
+
 # Also look for SNMP agents (UDP/161), or use the asyncio port scanner
 $ sudo python main.py --network 192.168.1.0/24 --scan-ports --snmp-probe
 $ sudo python main.py --network 192.168.1.0/24 --scan-ports --async-scan
@@ -222,10 +228,12 @@ arp-atlas/
 │       ├── services/
 │       │   ├── enrichment.py     lookup_vendor() (OUI), lookup_hostname() (rDNS), enrich_devices()
 │       │   ├── conflict_service.py  find_ip_conflicts() — ARP anomaly / spoofing detection
-│       │   ├── history_service.py   load_history(), save_scan(), diff_devices()
+│       │   ├── history_service.py   load_history(), save_scan(), diff_devices(), known_device_macs()
+│       │   ├── watch_service.py     detect_changes() — new device / MAC change alerts for --watch
+│       │   ├── network_utils.py     get_default_gateway()
 │       │   └── export_service.py    export_devices() — CSV / JSON output
 │       └── server/
-│           ├── handler.py    DashboardHandler — HTTP request handler (POST /api/scan, GET /)
+│           ├── handler.py    DashboardHandler — request guards, POST /api/scan, GET /api/status, GET /
 │           └── server.py     run_dashboard() — TCP server entry point
 │   └── tests/              Unit tests for all backend modules
 ├── cli/                    Command-line interface
@@ -415,10 +423,14 @@ switches tuned to flag either pattern:
   a time, in randomized order, with a small random delay between each
   (`GENTLE_SCAN_JITTER` in `config.py`), instead of the default single
   broadcast covering the whole range. Avoids putting 254 ARP requests on the
-  wire at once, at the cost of a scan that takes roughly
-  `host_count * (timeout + jitter)` instead of one shared timeout window.
+  wire at once. The requests are paced by the jitter alone while a single
+  background sniffer collects the replies, so a sweep takes about the sum of
+  the jitters plus one `timeout` (an earlier version waited a full `timeout`
+  after every request).
 - **`--syn-scan`** (`scan_device_ports(..., method="syn")`) does a half-open
-  TCP SYN probe per port instead of a full `connect()` - the same technique
+  TCP SYN probe instead of a full `connect()` - all of a host's ports go out
+  in one batch, so a host that drops packets costs one `timeout`, not one per
+  port - - the same technique
   nmap's default privileged scan uses: send a SYN, and on a SYN+ACK tear the
   attempt down ourselves with a RST before the handshake ever completes. Only
   takes effect alongside `--scan-ports`; needs the same raw-socket privileges
@@ -462,3 +474,62 @@ a running event loop (it used to raise `RuntimeError`), and
 `backend.app.models.NetworkDevice` is available as an opt-in typed view of a
 device dict - `NetworkDevice.from_dict(d).to_dict() == d` for anything the
 pipeline produces, so adopting it can't change an export or a history file.
+
+## Scan speed, dashboard hardening and watch mode
+
+**Faster scans**
+
+- **`--gentle-scan`** no longer blocks for a full `--timeout` after every
+  request - see above. Measured on loopback against a fake responder, a
+  10-host sweep dropped from about 4.2 s to 0.75 s, and the gap grows with
+  the number of hosts.
+- **`--syn-scan`** sends every port of a host in one `sr()` batch instead of
+  one `sr1()` per port (23 default ports: about 0.27 s to 0.03 s on
+  loopback; against a host that silently drops packets it is one timeout
+  instead of 23).
+- **`--retries N`** (default 1, max 5; `--retries 0` for the old single shot)
+  re-sends ARP requests that got no answer. One shot loses replies on busy
+  Wi-Fi and from sleeping IoT devices. Each retry costs one more `--timeout`
+  window while hosts are still unanswered. Gentle mode ignores it.
+
+**Role guesses use the hostname.** `classify_device(vendor, ports, hostname)`
+treats a name like `ESP_1A2B3C`, `DESKTOP-AB12CD3`, `BRN30055C1234`,
+`ipcam-front`, `AP-Lobby` or `SW-ACCESS-01` as a hint worth 3 points - enough
+to settle a tie or a weak guess, never enough to outweigh a strong port
+signature (5). `classify_device_scored()` also returns the winning score.
+The score is not stored in the device dict, so exports and history are
+unchanged.
+
+**`--watch SECONDS`** (minimum 5) re-scans until Ctrl-C and alerts on:
+
+- a MAC never seen before on this network (`NEW DEVICE`; randomized MACs are
+  labelled as such, since phones rotate them),
+- an address that now answers from a different MAC (`MAC CHANGED`), and
+- the same for the default gateway (`GATEWAY MAC CHANGED`) - the classic sign
+  of ARP spoofing.
+
+The first scan only records a baseline. It needs scan history (so it can't be
+combined with `--no-history`, `--output` or `--stream-jsonl`). History now
+also keeps a `known_devices` registry per network (MAC to `first_seen` /
+`last_seen`) that survives a device being switched off for one scan; the
+device dicts themselves are unchanged.
+
+**Dashboard**
+
+- `POST /api/scan` and `POST /api/clear` act as whoever started the dashboard
+  (often root), so they now refuse requests that did not come from the page
+  itself: a browser `Origin` or `Sec-Fetch-Site` that isn't this server, a
+  `Host` other than `127.0.0.1` / `localhost` / `[::1]` (DNS rebinding), and a
+  scan body that isn't `application/json`. `curl` and scripts, which send no
+  `Origin`, still work.
+- The server is threaded. Only one scan runs at a time: a second one gets a
+  `409`, and `GET /api/status` reports the current phase (ARP sweep,
+  enriching, port scan with `done/total`, saving), which the Scan button
+  shows while it runs.
+- An **Options** panel exposes `--ports`, `--snmp-probe`, gentle mode,
+  timeout and retries. Interface names are HTML-escaped.
+
+**Tests and CI.** `backend/tests/test_raw_socket_integration.py` exercises the
+ARP sweeps and the SYN scan over loopback with real raw sockets (it skips
+itself without root / `CAP_NET_RAW`, e.g. on CI). CI now also runs
+`ruff format --check .`.

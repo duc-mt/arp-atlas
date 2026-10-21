@@ -26,6 +26,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements-dev.txt
       - run: ruff check --select F,E9,B,SIM,RUF .
+      - run: ruff format --check .
       - run: mypy .
 
   test:
