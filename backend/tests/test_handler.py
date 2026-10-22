@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import socket
 import threading
 import time
 from unittest import mock
@@ -24,6 +25,7 @@ import pytest
 
 from backend.app.config import DEFAULT_ARP_RETRIES, DEFAULT_TIMEOUT
 from backend.app.server.handler import (
+    MAX_BODY_BYTES,
     MAX_RANGE_SIZE,
     SCAN_STATE,
     DashboardHandler,
@@ -164,7 +166,7 @@ class TestScanEndpoint:
         with mock.patch("backend.app.config.HISTORY_FILE", str(tmp_path / "scan_history.json")):
             status, payload = _post_json(host, port, "/api/scan", {"target": "10.0.0.0-10.1.0.0"})
 
-        assert status == 500
+        assert status == 400  # a client error, not a server fault
         assert payload["status"] == "error"
         assert "too large" in payload["message"]
 
@@ -478,7 +480,7 @@ class TestScanLockAndStatus:
     def test_a_failed_scan_releases_the_lock(self, live_server, tmp_path):
         with mock.patch("backend.app.config.HISTORY_FILE", str(tmp_path / "scan_history.json")):
             status, _ = _post(live_server, "/api/scan", {"target": "10.0.0.0-10.1.0.0"})
-        assert status == 500
+        assert status == 400  # a client error, not a server fault
         assert SCAN_STATE.snapshot() == {"scanning": False}
         assert SCAN_STATE.try_begin() is True  # and a new scan can start
         SCAN_STATE.end()
@@ -622,7 +624,7 @@ class TestScanOptionsEndToEnd:
 
     def test_a_bad_option_is_reported_and_nothing_is_scanned(self, live_server, tmp_path):
         (status, payload), mock_arp, _ = self._scan(live_server, tmp_path, {"retries": 99})
-        assert status == 500
+        assert status == 400  # a client error, not a server fault
         assert "retries must be between 0 and 5" in payload["message"]
         mock_arp.assert_not_called()
 
@@ -703,3 +705,128 @@ def test_threaded_server_serves_requests_concurrently(live_server):
 
     assert results["second"] == (200, {"scanning": False})
     assert "first" in results
+
+
+def _raw_post(server, headers: str, body: bytes = b"", *, read_timeout: float = 5.0):
+    """Send a hand-built POST /api/scan and return (status line, parsed body).
+    http.client refuses to send a nonsensical Content-Length, which is exactly
+    what these tests need to send."""
+    host, port = server
+    with socket.create_connection((host, port), timeout=read_timeout) as sock:
+        sock.sendall(
+            f"POST /api/scan HTTP/1.1\r\nHost: {host}:{port}\r\n"
+            f"Content-Type: application/json\r\n{headers}\r\n".encode()
+            + body
+        )
+        chunks = []
+        while True:
+            try:
+                chunk = sock.recv(4096)
+            except TimeoutError:
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+    raw = b"".join(chunks)
+    head, _, payload = raw.partition(b"\r\n\r\n")
+    status_line = head.split(b"\r\n")[0].decode() if head else ""
+    try:
+        return status_line, json.loads(payload)
+    except ValueError:
+        return status_line, payload
+
+
+class TestHostileRequestBodies:
+    """A malformed Content-Length used to kill or park the handler thread with
+    no reply at all: int() raised outside any try block, a negative length made
+    rfile.read() wait for the client to close, and a huge one waited for data
+    that never came."""
+
+    @pytest.mark.parametrize("length", ["abc", "-5", "+5", "1_0", "5 5", "0x10", "1.5", ""])
+    def test_a_malformed_content_length_gets_a_400_not_a_dead_connection(
+        self, live_server, length, capfd
+    ):
+        status, payload = _raw_post(live_server, f"Content-Length: {length}\r\n")
+
+        assert status.endswith("400 Bad Request")
+        assert payload["message"] == "invalid Content-Length"
+        assert "Traceback" not in capfd.readouterr().err
+
+    def test_an_oversized_body_is_refused_without_being_read(self, live_server):
+        status, payload = _raw_post(
+            live_server, f"Content-Length: {MAX_BODY_BYTES + 1}\r\n"
+        )  # no body is sent: the server must not wait for one
+
+        assert status.endswith(("413 Request Entity Too Large", "413 Content Too Large"))
+        assert "too large" in payload["message"]
+
+    def test_a_ten_gigabyte_claim_is_refused_instantly(self, live_server):
+        start = time.monotonic()
+        status, _ = _raw_post(live_server, "Content-Length: 10737418240\r\n")
+
+        assert status.endswith(("413 Request Entity Too Large", "413 Content Too Large"))
+        assert time.monotonic() - start < 2
+
+    def test_a_body_at_the_limit_is_accepted(self, live_server):
+        body = json.dumps({"target": "x" * (MAX_BODY_BYTES - 20)}).encode()
+        assert len(body) <= MAX_BODY_BYTES
+        status, payload = _raw_post(live_server, f"Content-Length: {len(body)}\r\n", body)
+
+        assert status.endswith("400 Bad Request")  # rejected as a bad target, not as too large
+        assert "too large" not in payload["message"]
+
+    def test_a_body_that_never_arrives_times_out_instead_of_holding_the_thread(self, live_server):
+        with mock.patch.object(DashboardHandler, "timeout", 0.3):
+            start = time.monotonic()
+            status, payload = _raw_post(live_server, "Content-Length: 50\r\n", b'{"a"')
+
+        assert status.endswith("408 Request Timeout")
+        assert payload["message"] == "request body timed out"
+        assert time.monotonic() - start < 3
+
+    def test_the_scan_lock_is_not_taken_by_a_rejected_request(self, live_server):
+        _raw_post(live_server, "Content-Length: abc\r\n")
+        _raw_post(live_server, f"Content-Length: {MAX_BODY_BYTES + 1}\r\n")
+
+        assert SCAN_STATE.snapshot() == {"scanning": False}
+
+    def test_the_handler_has_a_socket_timeout(self):
+        assert 0 < DashboardHandler.timeout <= 60
+
+    @pytest.mark.parametrize(
+        ("body", "message"),
+        [
+            (b"", "not valid JSON"),
+            (b"xyz", "not valid JSON"),
+            (b"\xff\xfe", "not valid JSON"),
+            (b"[]", "must be a JSON object"),
+            (b"null", "must be a JSON object"),
+            (b'"text"', "must be a JSON object"),
+            (b"5", "must be a JSON object"),
+            (b'{"target": 5}', "target and iface must be strings"),
+            (b'{"target": ["a"]}', "target and iface must be strings"),
+            (b'{"iface": 7}', "target and iface must be strings"),
+            (b"{}", "No target provided"),
+        ],
+    )
+    def test_a_bad_json_body_is_a_400_with_a_clear_message(self, live_server, body, message):
+        status, payload = _raw_post(live_server, f"Content-Length: {len(body)}\r\n", body)
+
+        assert status.endswith("400 Bad Request")
+        assert message in payload["message"]
+        assert SCAN_STATE.snapshot() == {"scanning": False}  # and the lock was released
+
+    def test_a_real_server_failure_is_still_a_500(self, live_server, tmp_path):
+        body = json.dumps({"target": "192.168.50.0/30"}).encode()
+        with (
+            mock.patch("backend.app.config.HISTORY_FILE", str(tmp_path / "scan_history.json")),
+            mock.patch(
+                "backend.app.scanner.arp_scanner.scan_network",
+                side_effect=RuntimeError("scapy exploded"),
+            ),
+        ):
+            status, payload = _raw_post(live_server, f"Content-Length: {len(body)}\r\n", body)
+
+        assert status.endswith("500 Internal Server Error")
+        assert payload["message"] == "scapy exploded"
+        assert SCAN_STATE.snapshot() == {"scanning": False}

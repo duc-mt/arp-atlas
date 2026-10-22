@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
@@ -63,8 +63,6 @@ class TestUpdateOuiWorkflow:
         crons = [entry["cron"] for entry in triggers["schedule"]]
         assert crons == ["0 0 1 * *"]  # 00:00 UTC on the 1st of each month
         assert "workflow_dispatch" in triggers
-        assert triggers["workflow_dispatch"]["inputs"]["mode"]["options"] == ["pr", "commit"]
-        assert triggers["workflow_dispatch"]["inputs"]["mode"]["default"] == "pr"
 
     def test_runs_the_update_script_and_it_exists(self) -> None:
         runs = [step["run"] for step in _steps(_load(OUI_WORKFLOW)) if "run" in step]
@@ -109,10 +107,50 @@ class TestUpdateOuiWorkflow:
     def test_permissions_are_read_only_except_for_the_one_job(self) -> None:
         doc = _load(OUI_WORKFLOW)
         assert doc["permissions"] == {"contents": "read"}
-        assert doc["jobs"]["update"]["permissions"] == {
-            "contents": "write",
-            "pull-requests": "write",
-        }
+        # Committing needs contents: write and nothing else - no pull-request scope.
+        assert doc["jobs"]["update"]["permissions"] == {"contents": "write"}
+
+    def test_commits_directly_and_never_opens_a_pull_request(self) -> None:
+        """The update is applied automatically: nobody has to review and merge a PR."""
+        doc = _load(OUI_WORKFLOW)
+        runs = "\n".join(s.get("run", "") for s in _steps(doc))
+
+        assert "gh pr" not in runs
+        assert "pull-requests" not in doc["jobs"]["update"]["permissions"]
+        assert "git push origin" in runs
+
+    def test_the_push_targets_the_default_branch_and_is_never_forced(self) -> None:
+        push_step = next(s for s in _steps(_load(OUI_WORKFLOW)) if "git push" in s.get("run", ""))
+        run = push_step["run"]
+
+        assert "HEAD:${DEFAULT_BRANCH}" in run
+        assert push_step["env"]["DEFAULT_BRANCH"] == "${{ github.event.repository.default_branch }}"
+        assert "--force" not in run
+        assert "-f " not in run
+
+    def test_a_push_that_races_another_commit_is_rebased_and_retried(self) -> None:
+        run = next(s for s in _steps(_load(OUI_WORKFLOW)) if "git push" in s.get("run", ""))["run"]
+
+        assert "for attempt in" in run
+        assert 'git rebase "origin/${DEFAULT_BRANCH}"' in run
+        assert "exit 1" in run  # gives up loudly rather than reporting success
+
+    def test_the_commit_is_attributed_to_the_bot_and_describes_the_change(self) -> None:
+        run = next(s for s in _steps(_load(OUI_WORKFLOW)) if "git commit" in s.get("run", ""))[
+            "run"
+        ]
+
+        assert "github-actions[bot]" in run
+        assert "chore(data): refresh OUI database" in run
+        assert "${OLD_LINES} -> ${NEW_LINES}" in run
+
+    def test_a_token_that_may_push_to_a_protected_branch_can_be_supplied(self) -> None:
+        checkout = next(
+            s
+            for s in _steps(_load(OUI_WORKFLOW))
+            if s.get("uses", "").startswith("actions/checkout")
+        )
+        assert checkout["with"]["token"] == "${{ secrets.OUI_PUSH_TOKEN || github.token }}"
 
     def test_does_not_interpolate_expressions_into_shell_scripts(self) -> None:
         """`${{ ... }}` inside `run:` is substituted before the shell runs, so
@@ -125,6 +163,21 @@ class TestUpdateOuiWorkflow:
         assert doc["concurrency"]["group"] == "update-oui"
         assert doc["concurrency"]["cancel-in-progress"] is False
         assert doc["jobs"]["update"]["timeout-minutes"] <= 30
+
+
+class TestCiWorkflow:
+    def test_the_release_step_does_not_interpolate_expressions_into_shell(self) -> None:
+        """`${{ github.ref }}` used to be pasted into the `[[ ... ]]` test; the
+        runner already exports GITHUB_REF, which needs no substitution."""
+        step = next(s for s in _steps(_load(WORKFLOWS / "ci.yml")) if s.get("id") == "release_info")
+
+        assert "${{" not in step["run"]
+        assert '"${GITHUB_REF}"' in step["run"]
+        assert step["run"].count('>> "${GITHUB_OUTPUT}"') == 2  # quoted, grouped redirects
+
+    def test_ci_also_checks_formatting(self) -> None:
+        runs = [s.get("run", "") for s in _steps(_load(WORKFLOWS / "ci.yml"))]
+        assert "ruff format --check ." in runs
 
 
 class TestDevDependencies:

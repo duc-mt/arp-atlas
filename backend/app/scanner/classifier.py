@@ -15,12 +15,16 @@ Notes:         Requires Python 3.8+
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import re
 import secrets
 import socket
 from typing import Any
 
 from backend.app.config import COMMON_PORTS, MAX_SCAN_WORKERS, PORT_PRESETS, SNMP_PORT
+from backend.app.services.network_utils import is_permission_error
+
+logger = logging.getLogger(__name__)
 
 # Source-port range for the SYN scan's batch: the unprivileged ephemeral
 # range, so replies can't be mistaken for traffic to a well-known port.
@@ -429,12 +433,30 @@ def scan_devices_ports(
     `max_workers` caps how many devices are scanned in parallel
     (default `config.MAX_SCAN_WORKERS`). Ports are probed one at a time
     per device, so it is also the most sockets this scan holds open.
+
+    A device whose scan fails is logged as a warning and left without
+    "open_ports"/"role" (progress still counts it); the rest are
+    unaffected. A permission error is the exception - it means no device
+    can be scanned, so it propagates.
     """
     ports = COMMON_PORTS if ports is None else ports
     workers = max(1, min(max_workers or MAX_SCAN_WORKERS, len(devices)))
 
     def _scan(device: dict[str, Any]) -> dict[str, Any]:
-        open_ports = scan_device_ports(device["ip"], ports, timeout, method=method, snmp=snmp)
+        try:
+            open_ports = scan_device_ports(device["ip"], ports, timeout, method=method, snmp=snmp)
+        except Exception as exc:
+            if is_permission_error(exc):
+                raise  # every device would fail the same way - tell the user
+            # One unreachable or misbehaving device must not throw away the
+            # results for all the others: leave it unscanned and say so.
+            logger.warning(
+                "port scan of %s failed (%s: %s); leaving it unscanned",
+                device.get("ip"),
+                type(exc).__name__,
+                exc,
+            )
+            return device
         device["open_ports"] = open_ports
         device["role"] = classify_device(device.get("vendor"), open_ports, device.get("hostname"))
         return device

@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 _FRONTEND_DIR = Path(__file__).resolve().parents[3] / "frontend"
 _DASHBOARD_HTML_PATH = _FRONTEND_DIR / "dashboard.html"
 
+import contextlib
 import html
 import logging
 import re
@@ -55,6 +56,10 @@ _ALLOWED_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "[::1]"})
 # packet goes out - this bounds that to something a LAN sweep can
 # actually finish in reasonable time.
 MAX_RANGE_SIZE = 65536
+
+# A scan request is a few hundred bytes of JSON. Anything near this size is a
+# mistake or an attack, and is refused before it is read into memory.
+MAX_BODY_BYTES = 64 * 1024
 
 
 def _get_netmask(iface_name: str) -> int:
@@ -140,6 +145,17 @@ class ScanOptions:
     gentle: bool = False
     ports: list[int] | None = None
     snmp: bool = False
+
+
+@dataclass(frozen=True)
+class ScanRequest:
+    """A validated POST /api/scan request."""
+
+    target_ips: list[str]
+    network_str: str
+    iface: str | None
+    scan_ports: bool
+    options: ScanOptions
 
 
 def _parse_options(data: dict[str, Any]) -> ScanOptions:
@@ -241,6 +257,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     API endpoints — POST /api/scan and POST /api/clear.
     """
 
+    # Per-connection socket timeout. Without it a client that promises a body
+    # and never sends it (or just opens a socket and goes quiet) holds a
+    # handler thread forever. Only reads are affected: a scan in progress is
+    # not waiting on the client.
+    timeout = 15
+
     def _json_response(self, status: int, payload: Any) -> None:
         body = json.dumps(payload).encode()
         self.send_response(status)
@@ -285,6 +307,80 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def _read_body(self) -> bytes | None:
+        """The request body, or None after replying with the error.
+
+        Content-Length is checked before anything is read: it must be plain
+        digits and no larger than MAX_BODY_BYTES. (`int()` alone accepts
+        signs and underscores, `rfile.read(-1)` reads until the client closes
+        the connection, and a huge value waits for data that never comes.)
+        """
+        raw_length = self.headers.get("Content-Length")
+        if raw_length is None:
+            return b""
+        raw_length = raw_length.strip()
+        if not (raw_length.isascii() and raw_length.isdigit()):
+            self._json_response(400, {"status": "error", "message": "invalid Content-Length"})
+            return None
+        length = int(raw_length)
+        if length > MAX_BODY_BYTES:
+            self._json_response(
+                413,
+                {
+                    "status": "error",
+                    "message": f"request body too large (limit {MAX_BODY_BYTES} bytes)",
+                },
+            )
+            return None
+        try:
+            return self.rfile.read(length)
+        except OSError:  # includes the socket timeout set above
+            self.close_connection = True
+            # If the client is gone there is nobody to tell.
+            with contextlib.suppress(OSError):
+                self._json_response(408, {"status": "error", "message": "request body timed out"})
+            return None
+
+    @staticmethod
+    def _parse_scan_request(post_data: bytes) -> ScanRequest:
+        """Validate a POST /api/scan body. Raises ValueError, with a message
+        fit to show the user, for anything the client got wrong."""
+        import scapy.all as scapy  # type: ignore[import-untyped]
+
+        try:
+            data = json.loads(post_data.decode("utf-8"))
+        except ValueError:  # bad JSON or bad UTF-8
+            raise ValueError("request body is not valid JSON") from None
+        if not isinstance(data, dict):
+            raise ValueError("request body must be a JSON object")
+
+        target_input = data.get("target") or ""
+        iface = data.get("iface") or None
+        if not isinstance(target_input, str) or (iface is not None and not isinstance(iface, str)):
+            raise ValueError("target and iface must be strings")
+        target_input = target_input.strip()
+        options = _parse_options(data)
+
+        if not target_input and iface:
+            for ifc in scapy.get_working_ifaces():
+                if ifc.name == iface and ifc.ip and ifc.ip != "127.0.0.1":
+                    mask = _get_netmask(ifc.name)
+                    target_input = f"{ifc.ip}/{mask}"
+                    break
+        if not target_input:
+            raise ValueError("No target provided and no interface selected to infer subnet.")
+
+        target_ips, network_str = _parse_target(target_input)
+        if iface:
+            network_str += f" on {iface}"
+        return ScanRequest(
+            target_ips=target_ips,
+            network_str=network_str,
+            iface=iface,
+            scan_ports=bool(data.get("scan_ports", False)),
+            options=options,
+        )
+
     def _handle_scan(self) -> None:
         import scapy.all as scapy  # type: ignore[import-untyped]
 
@@ -295,8 +391,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         from backend.app.services.history_service import save_scan
         from backend.app.services.network_utils import get_default_gateway
 
-        content_length = int(self.headers.get("Content-Length", 0))
-        post_data = self.rfile.read(content_length)
+        post_data = self._read_body()
+        if post_data is None:
+            return
 
         # A JSON content type can't be sent cross-site without a CORS
         # preflight, which this server never approves - a second layer
@@ -315,24 +412,16 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         try:
-            data = json.loads(post_data.decode("utf-8"))
-            target_input = data.get("target", "").strip()
-            iface = data.get("iface")
-            scan_ports = data.get("scan_ports", False)
-            options = _parse_options(data)
+            # A bad request is the client's mistake (400); anything that fails
+            # after this point is the server's (500).
+            try:
+                request = self._parse_scan_request(post_data)
+            except ValueError as e:
+                self._json_response(400, {"status": "error", "message": str(e)})
+                return
 
-            if not target_input and iface:
-                for ifc in scapy.get_working_ifaces():
-                    if ifc.name == iface and ifc.ip and ifc.ip != "127.0.0.1":
-                        mask = _get_netmask(ifc.name)
-                        target_input = f"{ifc.ip}/{mask}"
-                        break
-            if not target_input:
-                raise ValueError("No target provided and no interface selected to infer subnet.")
-
-            target_ips, network_str = _parse_target(target_input)
-            if iface:
-                network_str += f" on {iface}"
+            target_ips, network_str = request.target_ips, request.network_str
+            iface, options = request.iface, request.options
 
             SCAN_STATE.set_phase("arp")
             devices = scan_network(
@@ -371,7 +460,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 if gw_ip and d.get("ip") == gw_ip:
                     d["is_gateway"] = True
 
-            if scan_ports:
+            if request.scan_ports:
                 SCAN_STATE.set_phase("ports")
                 port_kwargs: dict[str, Any] = {"progress_callback": SCAN_STATE.progress}
                 if options.ports is not None:

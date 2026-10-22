@@ -136,12 +136,24 @@ async def async_scan_devices_ports(
 
     async def _scan_one(device: dict[str, Any]) -> None:
         nonlocal completed
-        async with host_semaphore:
-            open_ports = await async_scan_device_ports(
-                device["ip"], ports, timeout, fd_semaphore=fd_semaphore, snmp=snmp
+        try:
+            async with host_semaphore:
+                open_ports = await async_scan_device_ports(
+                    device["ip"], ports, timeout, fd_semaphore=fd_semaphore, snmp=snmp
+                )
+        except Exception as exc:
+            # One misbehaving device must not throw away the others' results.
+            logger.warning(
+                "port scan of %s failed (%s: %s); leaving it unscanned",
+                device.get("ip"),
+                type(exc).__name__,
+                exc,
             )
-        device["open_ports"] = open_ports
-        device["role"] = classify_device(device.get("vendor"), open_ports, device.get("hostname"))
+        else:
+            device["open_ports"] = open_ports
+            device["role"] = classify_device(
+                device.get("vendor"), open_ports, device.get("hostname")
+            )
         completed += 1
         if progress_callback:
             try:

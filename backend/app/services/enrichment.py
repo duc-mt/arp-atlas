@@ -18,6 +18,7 @@ import asyncio
 import concurrent.futures
 import functools
 import gzip
+import logging
 import random
 import socket
 import struct
@@ -28,6 +29,8 @@ from typing import Any, TypeVar
 from backend.app.config import DEFAULT_HOSTNAME_TIMEOUT
 
 _T = TypeVar("_T")
+
+logger = logging.getLogger(__name__)
 
 # ==============================================================================
 # Vendor / OUI resolution
@@ -576,8 +579,13 @@ async def _enrich_devices_async(devices: list[dict[str, Any]]) -> None:
             return await _lookup_hostname_async(ip, timeout)
 
     tasks = [_bounded_lookup(d["ip"], DEFAULT_HOSTNAME_TIMEOUT) for d in devices]
-    hostnames = await asyncio.gather(*tasks)
+    # return_exceptions: a lookup that blows up (say, out of file descriptors for
+    # one device) means "no hostname for that device", not "no hostnames at all".
+    hostnames = await asyncio.gather(*tasks, return_exceptions=True)
     for d, h in zip(devices, hostnames, strict=False):
+        if isinstance(h, BaseException):
+            logger.warning("hostname lookup for %s failed (%s: %s)", d["ip"], type(h).__name__, h)
+            h = None
         d["hostname"] = h
 
 

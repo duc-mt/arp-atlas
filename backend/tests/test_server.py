@@ -24,10 +24,12 @@ import json
 import os
 import signal
 import socket
+import subprocess
 import sys
 import threading
 import time
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any, ClassVar
 from unittest import mock
 
@@ -50,6 +52,20 @@ class RecordingServer(ReuseTCPServer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         RecordingServer.instances.append(self)
+
+
+@pytest.fixture(autouse=True)
+def _sigterm_handler_is_never_leaked() -> Iterator[None]:
+    """run_dashboard() installs a SIGTERM handler for as long as it runs; no
+    test may leave it behind, or it would hijack SIGTERM for the rest of the
+    pytest process (and make the restore assertions below compare against the
+    leaked handler instead of the real default)."""
+    if not hasattr(signal, "SIGTERM"):
+        yield
+        return
+    before = signal.getsignal(signal.SIGTERM)
+    yield
+    assert signal.getsignal(signal.SIGTERM) == before, "SIGTERM handler leaked out of the test"
 
 
 @pytest.fixture
@@ -303,3 +319,100 @@ class TestRealSignal:
         assert "Shutting down dashboard." in capsys.readouterr().out
         assert _port_is_free(outcome["port"])
         assert not _accepts_connections(outcome["port"])
+
+
+class TestSigtermHandling:
+    """`docker stop`, systemd and `kill` send SIGTERM, whose default action
+    kills the process on the spot - no shutdown message, and requests in
+    flight are cut off. run_dashboard() now handles it like Ctrl-C."""
+
+    def test_the_handler_turns_sigterm_into_the_ctrl_c_path(self) -> None:
+        with pytest.raises(KeyboardInterrupt):
+            server_module._terminate(signal.SIGTERM, None)
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+    def test_the_handler_is_installed_while_serving_and_restored_afterwards(self) -> None:
+        before = signal.getsignal(signal.SIGTERM)
+        seen: list[Any] = []
+
+        stub_cls = mock.MagicMock(name="ReuseTCPServer")
+        stub = stub_cls.return_value
+        stub.__enter__.return_value = stub
+        stub.__exit__.return_value = False
+        stub.serve_forever.side_effect = lambda: seen.append(signal.getsignal(signal.SIGTERM))
+        with mock.patch.object(server_module, "ReuseTCPServer", stub_cls):
+            run_dashboard(port=9123)
+
+        assert seen == [server_module._terminate]
+        assert signal.getsignal(signal.SIGTERM) == before
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+    def test_the_handler_is_restored_even_if_serving_fails(self) -> None:
+        before = signal.getsignal(signal.SIGTERM)
+        stub_cls = mock.MagicMock(name="ReuseTCPServer")
+        stub = stub_cls.return_value
+        stub.__enter__.return_value = stub
+        stub.__exit__.return_value = False
+        stub.serve_forever.side_effect = RuntimeError("boom")
+        with (
+            mock.patch.object(server_module, "ReuseTCPServer", stub_cls),
+            pytest.raises(RuntimeError),
+        ):
+            run_dashboard(port=9123)
+
+        assert signal.getsignal(signal.SIGTERM) == before
+
+    def test_a_non_main_thread_leaves_signal_handling_to_the_caller(self) -> None:
+        before = signal.getsignal(signal.SIGTERM)
+        stub_cls = mock.MagicMock(name="ReuseTCPServer")
+        stub = stub_cls.return_value
+        stub.__enter__.return_value = stub
+        stub.__exit__.return_value = False
+        errors: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                run_dashboard(port=9123)  # signal.signal() would raise ValueError here
+            except BaseException as e:
+                errors.append(e)
+
+        with mock.patch.object(server_module, "ReuseTCPServer", stub_cls):
+            thread = threading.Thread(target=worker)
+            thread.start()
+            thread.join(timeout=_WAIT)
+
+        assert errors == []
+        assert signal.getsignal(signal.SIGTERM) == before
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="delivers a real SIGTERM")
+    def test_sigterm_stops_a_real_dashboard_process_cleanly(self) -> None:
+        """Runs the dashboard in a child process: if the handler regressed,
+        SIGTERM would kill the child, not the test run."""
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = int(probe.getsockname()[1])
+
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                f"from backend.app.server.server import run_dashboard; run_dashboard({port})",
+            ],
+            cwd=Path(__file__).resolve().parents[2],
+            env={**os.environ, "PYTHONPATH": "."},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            assert _get_status(port) == (200, {"scanning": False})  # it is serving
+            child.send_signal(signal.SIGTERM)
+            output, _ = child.communicate(timeout=_WAIT * 2)
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.communicate()
+
+        assert child.returncode == 0, f"killed by the signal instead of shutting down: {output!r}"
+        assert "Shutting down dashboard." in output
+        assert _port_is_free(port)

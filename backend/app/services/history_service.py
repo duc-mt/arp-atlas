@@ -17,10 +17,12 @@ from __future__ import annotations
 import contextlib
 import datetime
 import json
+import logging
 import os
 import tempfile
-import typing
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def load_history(path: str) -> dict[str, Any]:
@@ -35,9 +37,25 @@ def load_history(path: str) -> dict[str, Any]:
     """
     try:
         with open(path) as f:
-            return typing.cast(dict[str, Any], json.load(f))
-    except (OSError, json.JSONDecodeError):
+            data = json.load(f)
+    except (OSError, ValueError):  # unreadable, not JSON, or not UTF-8
         return {}
+
+    # Valid JSON of the wrong shape (a list, null, an entry that is a string,
+    # devices that aren't dicts) would crash every caller with an
+    # AttributeError or TypeError, so keep only well-formed entries - the same
+    # way an unparseable file is treated as empty.
+    if not isinstance(data, dict):
+        logger.warning("ignoring %s: expected a JSON object, found %s", path, type(data).__name__)
+        return {}
+    valid: dict[str, Any] = {}
+    for network, entry in data.items():
+        devices = entry.get("devices") if isinstance(entry, dict) else None
+        if isinstance(devices, list) and all(isinstance(d, dict) for d in devices):
+            valid[network] = entry
+        else:
+            logger.warning("ignoring malformed history entry for %r in %s", network, path)
+    return valid
 
 
 def _mac_key(mac: Any) -> str:

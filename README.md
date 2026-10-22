@@ -403,16 +403,18 @@ as a plain "-" in the dashboard far more often than it should have:
   dependency, no network call on the hot path. Run
   `scripts/update-manuf-db.sh` (needs network access) whenever you want
   to refresh that cache from Wireshark's upstream file - or let
-  `.github/workflows/update-oui.yml` do it: on the 1st of every month (and
-  on demand from the Actions tab) it runs the script, and only if the
-  decompressed database actually changed it runs the test suite and opens
-  (or updates) a pull request on the `chore/update-oui-db` branch. Started by
-  hand with `mode=commit` it pushes to the default branch instead. It needs
-  "Allow GitHub Actions to create and approve pull requests" enabled in the
-  repository's Actions settings. The script refuses a download that isn't a
-  real manuf file (fewer than 1000 OUI lines, or no Wireshark header),
-  writes atomically, and gzips deterministically so an unchanged database
-  never shows up as a diff.
+  `.github/workflows/update-oui.yml` do it. On the 1st of every month (and on
+  demand from the Actions tab) it runs the script and, only if the
+  decompressed database actually changed *and* the whole test suite passes
+  against it, commits the new `manuf.gz` straight to the default branch as
+  `github-actions[bot]` - there is no pull request to review. If another commit
+  lands in the meantime it rebases and retries; it never force-pushes. If the
+  default branch is protected, allow `github-actions[bot]` to bypass the rule or
+  add a repository secret `OUI_PUSH_TOKEN` holding a token that may push (a push
+  made with it also triggers `ci.yml`, which a push made with the built-in token
+  does not). The script refuses a download that isn't a real manuf file (fewer
+  than 1000 OUI lines, or no Wireshark header), writes atomically, and gzips
+  deterministically so an unchanged database never shows up as a diff.
 - **Hostname resolution only tried unicast reverse DNS.** That depends on
   the LAN's DNS server having a PTR record for every DHCP lease, which
   most home/office networks never configure - so it silently resolved
@@ -553,3 +555,25 @@ that starts a server is time-bounded so a regression can't hang the suite.
 workflow wiring, unpinned (`>=`) dev dependencies and the ruff/mypy ignore
 lists. The old root-level `tests/` directory is gone; the suite lives in
 `backend/tests` and `cli/tests`.
+
+## Failure handling
+
+- **Dashboard requests.** `Content-Length` must be plain digits and at most
+  64 KiB: a malformed value gets a `400`, an oversized one a `413` before any
+  of the body is read (a bad value used to kill the handler thread without a
+  reply, or park it forever waiting for data), and a body that stalls is cut off
+  after 15 s with a `408`. A request body that isn't a JSON object, or whose
+  fields have the wrong type, is a `400` with a message. Input errors are `4xx`;
+  only a genuine failure while scanning is a `500`.
+- **SIGTERM.** `docker stop`, systemd and `kill` now shut the dashboard down
+  cleanly, exactly like Ctrl-C, instead of killing it mid-request.
+- **One bad device never costs you the rest.** If a device's port scan fails
+  (threaded or `--async-scan`), it is logged as a warning and left without
+  `open_ports`/`role`; the other devices are unaffected. A failed hostname
+  lookup likewise just leaves that device without a hostname. A permission
+  error is the exception - it means no device can be scanned, so it still stops
+  the run.
+- **History file.** A `scan_history.json` that is valid JSON but the wrong shape
+  (a list, `null`, entries that aren't objects) or isn't UTF-8 is treated like an
+  unparseable one: ignored (with a warning) and rewritten by the next scan,
+  instead of crashing the CLI.

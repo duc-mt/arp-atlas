@@ -159,16 +159,20 @@ jobs:
       - name: Determine Release Info
         id: release_info
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             tag="${GITHUB_REF#refs/tags/}"
-            echo "tag_name=${tag}" >> $GITHUB_OUTPUT
-            echo "release_name=${tag}" >> $GITHUB_OUTPUT
-            echo "generate_notes=true" >> $GITHUB_OUTPUT
+            {
+              echo "tag_name=${tag}"
+              echo "release_name=${tag}"
+              echo "generate_notes=true"
+            } >> "${GITHUB_OUTPUT}"
             touch release_body.md
           else
-            echo "tag_name=latest" >> $GITHUB_OUTPUT
-            echo "release_name=Latest Build" >> $GITHUB_OUTPUT
-            echo "generate_notes=false" >> $GITHUB_OUTPUT
+            {
+              echo "tag_name=latest"
+              echo "release_name=Latest Build"
+              echo "generate_notes=false"
+            } >> "${GITHUB_OUTPUT}"
             git log -1 --format="### 🚀 Latest Automated Build (%cd)%n%n- **Commit**: [\`%h\`](https://github.com/${GITHUB_REPOSITORY}/commit/%H)%n- **Message**: %s%n%n[View commit history](https://github.com/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME})" --date=short > release_body.md
           fi
 

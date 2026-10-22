@@ -1,26 +1,21 @@
 name: 🔄 Update OUI Database
 
-# Refreshes backend/app/data/manuf.gz from Wireshark's manuf file once a month.
-# If the database really changed, the change is tested and then published as a
-# pull request (or, when started by hand with mode=commit, pushed straight to
-# the default branch). If nothing changed, nothing is committed.
+# Refreshes backend/app/data/manuf.gz from Wireshark's manuf file once a month
+# and commits the result straight to the default branch - no pull request to
+# review. Nothing is committed unless the decompressed database really changed
+# AND the full test suite passes against it, so a bad download can't land.
 #
-# Needs "Allow GitHub Actions to create and approve pull requests" enabled under
-# Settings -> Actions -> General for the PR mode to work.
+# If the default branch is protected (required pull requests or status checks),
+# the built-in token cannot push to it: either let github-actions[bot] bypass
+# the rule, or add a repository secret named OUI_PUSH_TOKEN holding a token that
+# may push (a push made with it also triggers ci.yml, which a push made with the
+# built-in token does not).
 
 on:
   schedule:
     # 00:00 UTC on the 1st of every month.
     - cron: "0 0 1 * *"
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "How to publish a changed database"
-        type: choice
-        options:
-          - pr
-          - commit
-        default: pr
 
 permissions:
   contents: read
@@ -31,7 +26,6 @@ concurrency:
 
 env:
   OUI_FILE: backend/app/data/manuf.gz
-  UPDATE_BRANCH: chore/update-oui-db
 
 jobs:
   update:
@@ -40,9 +34,10 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.OUI_PUSH_TOKEN || github.token }}
 
       - name: Download the latest Wireshark manuf database
         run: scripts/update-manuf-db.sh
@@ -52,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           # The file is gzip, so compare the decompressed text: a different
-          # compressor build must not produce a pull request with no change.
+          # compressor build must not produce a commit with no change.
           old_lines="$(git show "HEAD:${OUI_FILE}" | gzip -dc | wc -l)"
           new_lines="$(gzip -dc "${OUI_FILE}" | wc -l)"
           old_sum="$(git show "HEAD:${OUI_FILE}" | gzip -dc | sha256sum | cut -d' ' -f1)"
@@ -80,17 +75,14 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         run: pip install -r requirements-dev.txt
 
-      # Pull requests opened with the built-in token do not trigger other
-      # workflows, so ci.yml would never run on the update. Run the tests here
-      # instead, before anything is published.
+      # The gate: a database that breaks the vendor lookup must not be committed.
       - name: Test against the new database
         if: steps.diff.outputs.changed == 'true'
         run: pytest backend/tests cli/tests --no-cov -q
 
-      - name: Open or update the pull request
-        if: steps.diff.outputs.changed == 'true' && (github.event_name == 'schedule' || inputs.mode != 'commit')
+      - name: Commit and push to the default branch
+        if: steps.diff.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           OLD_LINES: ${{ steps.diff.outputs.old_lines }}
           NEW_LINES: ${{ steps.diff.outputs.new_lines }}
@@ -98,37 +90,20 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "${UPDATE_BRANCH}"
           git add "${OUI_FILE}"
-          git commit -m "chore(data): refresh OUI database from Wireshark manuf"
-          # The branch is owned by this workflow: an unmerged PR from an earlier
-          # month is simply brought up to date.
-          git push --force origin "HEAD:refs/heads/${UPDATE_BRANCH}"
+          git commit -m "chore(data): refresh OUI database from Wireshark manuf (${OLD_LINES} -> ${NEW_LINES} lines)"
 
-          title="chore(data): refresh OUI database"
-          body="Automated monthly refresh of \`${OUI_FILE}\` from the Wireshark manuf database (${OLD_LINES} -> ${NEW_LINES} lines).
-
-          The test suite passed against the new database before this pull request was opened.
-          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-
-          existing="$(gh pr list --head "${UPDATE_BRANCH}" --base "${DEFAULT_BRANCH}" --state open --json number --jq '.[0].number // empty')"
-          if [ -n "${existing}" ]; then
-            gh pr edit "${existing}" --title "${title}" --body "${body}"
-            echo "Updated pull request #${existing}." | tee -a "${GITHUB_STEP_SUMMARY}"
-          else
-            gh pr create --base "${DEFAULT_BRANCH}" --head "${UPDATE_BRANCH}" --title "${title}" --body "${body}"
-            echo "Opened a pull request from ${UPDATE_BRANCH}." | tee -a "${GITHUB_STEP_SUMMARY}"
-          fi
-
-      - name: Commit directly to the default branch
-        if: steps.diff.outputs.changed == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'commit'
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "${OUI_FILE}"
-          git commit -m "chore(data): refresh OUI database from Wireshark manuf"
-          git push origin "HEAD:${DEFAULT_BRANCH}"
-          echo "Committed the refreshed database to ${DEFAULT_BRANCH}." | tee -a "${GITHUB_STEP_SUMMARY}"
+          # Someone may have pushed since the checkout; only this file is ours,
+          # so replaying the commit on top of the newest tip is safe. A few
+          # attempts cover a push racing with ours.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${DEFAULT_BRANCH}"; then
+              echo "Committed the refreshed database to ${DEFAULT_BRANCH} (${OLD_LINES} -> ${NEW_LINES} lines)." | tee -a "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+            echo "Push rejected (attempt ${attempt}); rebasing onto the latest ${DEFAULT_BRANCH}." >&2
+            git fetch origin "${DEFAULT_BRANCH}"
+            git rebase "origin/${DEFAULT_BRANCH}"
+          done
+          echo "Could not push after 3 attempts - see the log above." >&2
+          exit 1

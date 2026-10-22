@@ -44,3 +44,13 @@ def get_default_gateway(iface: str | None = None) -> str | None:
         if gateway and gateway != "0.0.0.0":  # nosec B104 - comparing, not binding
             return str(gateway)
     return None
+
+
+def is_permission_error(exc: BaseException) -> bool:
+    """True for a raw PermissionError, or for scapy's own Scapy_Exception
+    when it is wrapping a permission failure - which is what scapy raises on
+    some platforms, instead of a plain PermissionError, when raw-socket
+    access is denied."""
+    if isinstance(exc, PermissionError):
+        return True
+    return type(exc).__name__ == "Scapy_Exception" and "Permission" in str(exc)

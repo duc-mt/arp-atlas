@@ -41,7 +41,7 @@ from backend.app.services.history_service import (
     load_history,
     save_scan,
 )
-from backend.app.services.network_utils import get_default_gateway
+from backend.app.services.network_utils import get_default_gateway, is_permission_error
 from backend.app.services.watch_service import detect_changes
 from cli.arp_atlas_cli.formatters import (
     print_alerts,
@@ -58,9 +58,7 @@ def _is_permission_error(exc: Exception) -> bool:
     what scapy.srp() raises on some platforms instead of a plain
     PermissionError when raw-socket access is denied.
     """
-    if isinstance(exc, PermissionError):
-        return True
-    return type(exc).__name__ == "Scapy_Exception" and "Permission" in str(exc)
+    return is_permission_error(exc)
 
 
 def _scan_or_none(network: str, **kwargs: Any) -> list[dict[str, Any]] | None:
